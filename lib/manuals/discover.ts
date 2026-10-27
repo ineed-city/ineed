@@ -4,7 +4,7 @@ import { toFile } from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { z } from "zod";
-import { anthropic, MODEL } from "@/lib/ai/anthropic";
+import { anthropic, DISCOVERY_MODEL } from "@/lib/ai/anthropic";
 
 // Ce trebuie să returneze Claude: doar linkuri directe către PDF-uri.
 const CandidatesSchema = z.object({
@@ -36,6 +36,7 @@ Rules:
 - Never return forums, retailer or reseller pages, datasheets, brochures, or marketing material.
 - If the same manual exists in several languages, prefer English and Romanian.
 - If you cannot find a manual, return an empty list rather than guessing a link.
+- You have at most 3 searches: start with "${manufacturer} ${model} manual pdf", then refine only if needed.
 For each PDF give the URL, its title as shown on the site, and kind: "utilizare" for user manuals, "instalare" for installation, installer or programming manuals.`,
     },
   ];
@@ -43,21 +44,23 @@ For each PDF give the URL, its title as shown on the site, and kind: "utilizare"
   // Căutarea web poate cere mai multe runde („pause_turn”): continuăm conversația.
   for (let round = 0; round < 4; round++) {
     const response = await anthropic.beta.messages.parse({
-      model: MODEL,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      model: DISCOVERY_MODEL,
+      max_tokens: 8000,
+      // Rezultatele căutărilor se retrimit la fiecare pas: din cache costă ~10%.
+      cache_control: { type: "ephemeral" },
       tools: [
         {
-          type: "web_search_20260209",
+          type: "web_search_20250305",
           name: "web_search",
-          max_uses: 6,
+          max_uses: 3,
           allowed_domains: domains,
         },
       ],
-      output_config: { effort: "medium", format: betaZodOutputFormat(CandidatesSchema) },
+      output_config: { effort: "low", format: betaZodOutputFormat(CandidatesSchema) },
       messages,
     });
+    // Consumul fiecărui apel, vizibil în jurnalele Vercel, ca să urmărim costul.
+    console.info("searchManuals usage:", JSON.stringify(response.usage));
 
     if (response.stop_reason === "pause_turn") {
       messages.push({ role: "assistant", content: response.content });
