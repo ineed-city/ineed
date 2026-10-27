@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./auth/actions";
@@ -27,6 +28,9 @@ async function UserMenu() {
   return (
     <div className="flex items-center gap-3 text-sm">
       {email && <span className="text-zinc-600 dark:text-zinc-400">{email}</span>}
+      <Link href="/cont/parola" className="underline">
+        Parola
+      </Link>
       <form action={signOut}>
         <button
           type="submit"

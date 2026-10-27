@@ -1,40 +1,31 @@
 "use server";
 
-import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export type LoginState = { status: "idle" | "sent" | "error"; message?: string };
+export type FormState = { status: "idle" | "error"; message?: string };
 
-// Trimite un link de logare pe email. Doar conturile create (invitate) din
-// Supabase pot intra: shouldCreateUser: false blochează înscrierile noi.
-export async function sendMagicLink(
-  _prev: LoginState,
+export async function signIn(
+  _prev: FormState,
   formData: FormData,
-): Promise<LoginState> {
+): Promise<FormState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { status: "error", message: "Adresa de email nu pare validă." };
-  }
+  const password = String(formData.get("password") ?? "");
 
-  const origin = (await headers()).get("origin");
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: `${origin}/auth/callback`,
-    },
-  });
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-  // Prea multe cereri la rând: Supabase limitează trimiterea de emailuri.
-  if (error?.status === 429) {
-    return {
-      status: "error",
-      message: "Ai cerut prea multe linkuri. Încearcă din nou peste un minut.",
-    };
+  if (error) {
+    // Eroarea reală ajunge în jurnalele Vercel; utilizatorul vede un mesaj neutru.
+    console.error("signIn failed:", error.status, error.code);
+    if (error.status === 429) {
+      return {
+        status: "error",
+        message: "Prea multe încercări. Așteaptă un minut și încearcă din nou.",
+      };
+    }
+    return { status: "error", message: "Email sau parolă greșite." };
   }
 
-  // Același mesaj și pentru emailurile fără cont, ca să nu dezvăluim
-  // cine are acces în aplicație.
-  return { status: "sent" };
+  redirect("/");
 }
