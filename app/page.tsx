@@ -3,7 +3,8 @@ import { Suspense } from "react";
 import { getRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./auth/actions";
-import { RequestBox, type ProductOption } from "./request-box";
+import { getAnswerableProducts } from "@/lib/manuals/catalog";
+import { RequestBox } from "./request-box";
 import { Brand, ConciergeMark } from "./ui/brand";
 
 // Răspunsul AI din manuale poate dura câteva zeci de secunde.
@@ -74,19 +75,5 @@ async function UserMenu() {
 
 // Doar produsele cu cel puțin un manual aprobat pot primi întrebări.
 async function ProductRequestBox() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("products")
-    .select("id, model, manufacturers(name), manuals!inner(status)")
-    .eq("manuals.status", "aprobat")
-    .order("model");
-
-  const products: ProductOption[] = (data ?? [])
-    .map((p) => ({
-      id: p.id,
-      label: `${(p.manufacturers as unknown as { name: string } | null)?.name ?? ""} ${p.model}`.trim(),
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-
-  return <RequestBox products={products} />;
+  return <RequestBox products={await getAnswerableProducts()} />;
 }

@@ -2,6 +2,9 @@
 
 import { getRole } from "@/lib/auth";
 import { answerFromManuals, type AnswerSegment } from "@/lib/manuals/answer";
+import { getAnswerableProducts } from "@/lib/manuals/catalog";
+import { identifyProduct, type Identification } from "@/lib/manuals/identify";
+import { parseImageDataUrl } from "@/lib/manuals/image";
 import { createClient } from "@/lib/supabase/server";
 
 export type AskState = {
@@ -24,7 +27,11 @@ const EMPTY: Omit<AskState, "status"> = { segments: [], manuals: [] };
 
 export async function askQuestion(_prev: AskState, formData: FormData): Promise<AskState> {
   const productId = Number(formData.get("productId"));
-  const question = String(formData.get("question") ?? "").trim().slice(0, 2000);
+  const image = parseImageDataUrl(formData.get("image"));
+  // Doar cu poză, fără text: întrebăm ce înseamnă ce se vede.
+  const question =
+    String(formData.get("question") ?? "").trim().slice(0, 2000) ||
+    (image ? "Ce înseamnă ce se vede în poză și ce trebuie să fac?" : "");
   if (!productId) return { status: "error", ...EMPTY, error: "Alege întâi produsul." };
   if (!question) return { status: "error", ...EMPTY, error: "Scrie întrebarea." };
 
@@ -57,6 +64,7 @@ export async function askQuestion(_prev: AskState, formData: FormData): Promise<
         sourceUrl: m.source_url,
       })),
       question,
+      image,
     );
     if (refused) {
       return { status: "error", ...EMPTY, notice, error: "Nu pot răspunde la această întrebare." };
@@ -71,5 +79,21 @@ export async function askQuestion(_prev: AskState, formData: FormData): Promise<
   } catch (error) {
     console.error("askQuestion failed:", error);
     return { status: "error", ...EMPTY, notice, error: "Răspunsul nu a putut fi generat. Încearcă din nou." };
+  }
+}
+
+export type IdentifyResult = Identification | { error: string };
+
+// Recunoaște produsul dintr-o poză și îl potrivește cu biblioteca de manuale.
+export async function identifyFromPhoto(formData: FormData): Promise<IdentifyResult> {
+  if (!(await getRole())) return { error: "Intră din nou în cont." };
+  const image = parseImageDataUrl(formData.get("image"));
+  if (!image) return { error: "Poza nu a putut fi citită. Încearcă din nou." };
+
+  try {
+    return await identifyProduct(image, await getAnswerableProducts());
+  } catch (error) {
+    console.error("identifyFromPhoto failed:", error);
+    return { error: "Nu am putut analiza poza. Încearcă din nou." };
   }
 }

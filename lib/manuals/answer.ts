@@ -3,6 +3,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { z } from "zod";
 import { ANSWER_MODEL, anthropic } from "@/lib/ai/anthropic";
+import type { JpegImage } from "./image";
 
 export type ManualForAnswer = {
   title: string;
@@ -24,7 +25,8 @@ Reguli fixe:
 4. Text simplu, fără Markdown: fără **, #, sau tabele. Pentru proceduri folosești pași numerotați, „1.”, „2.”, câte unul pe rând.
 5. Lucrări la rețeaua electrică de 230 V sau la instalații de gaz: nu dai pași de execuție. Spui că lucrarea trebuie făcută de un electrician sau instalator autorizat ANRE.
 6. Sisteme de detecție și alarmare la incendiu: orice modificare a instalației se face doar de personal autorizat; amintește asta pe scurt când e cazul.
-7. Nu ajuți la dezactivarea sau ocolirea unui sistem fără acordul proprietarului.`;
+7. Nu ajuți la dezactivarea sau ocolirea unui sistem fără acordul proprietarului.
+8. Dacă utilizatorul a trimis o poză, o folosești doar ca să înțelegi situația (ex. ce eroare sau ce led se vede). Explicația vine tot din manuale.`;
 
 const RouteSchema = z.object({ kinds: z.array(z.enum(["utilizare", "instalare"])) });
 
@@ -59,6 +61,7 @@ export async function answerFromManuals(
   product: string,
   allManuals: ManualForAnswer[],
   question: string,
+  image: JpegImage | null = null,
 ): Promise<{ segments: AnswerSegment[]; manuals: ManualForAnswer[]; refused: boolean }> {
   const manuals = await chooseManuals(allManuals, question);
 
@@ -88,7 +91,18 @@ export async function answerFromManuals(
         role: "user",
         content: [
           ...documents,
-          { type: "text", text: `Produsul: ${product}\nÎntrebarea: ${question}` },
+          ...(image
+            ? [
+                {
+                  type: "image" as const,
+                  source: { type: "base64" as const, media_type: image.mediaType, data: image.data },
+                },
+              ]
+            : []),
+          {
+            type: "text",
+            text: `Produsul: ${product}\n${image ? "Utilizatorul a atașat o poză.\n" : ""}Întrebarea: ${question}`,
+          },
         ],
       },
     ],
