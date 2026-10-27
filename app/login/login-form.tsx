@@ -50,6 +50,9 @@ export function LoginForm() {
       >
         Ai uitat parola?
       </Link>
+      <Link href="/inregistrare" className="text-center text-sm text-muted underline">
+        Nu ai cont? Creează unul cu codul de invitație
+      </Link>
     </form>
   );
 }

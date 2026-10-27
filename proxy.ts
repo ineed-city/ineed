@@ -39,13 +39,14 @@ export async function proxy(request: NextRequest) {
   const isLoggedIn = Boolean(data?.claims);
 
   const { pathname } = request.nextUrl;
-  const isPublic = pathname.startsWith("/login") || pathname.startsWith("/auth/callback");
+  const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/inregistrare");
+  const isPublic = isAuthPage || pathname.startsWith("/auth/callback");
 
-  // Cine nu e logat ajunge la /login; cine e logat nu mai vede /login.
+  // Cine nu e logat ajunge la /login; cine e logat nu mai vede login/înregistrare.
   if (!isLoggedIn && !isPublic) {
     return redirectWithCookies(request, response, "/login");
   }
-  if (isLoggedIn && pathname.startsWith("/login")) {
+  if (isLoggedIn && isAuthPage) {
     return redirectWithCookies(request, response, "/");
   }
 
