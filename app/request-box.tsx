@@ -97,7 +97,8 @@ export function RequestBox({ products }: { products: ProductOption[] }) {
           <div className="whitespace-pre-wrap">
             {state.segments.map((segment, i) => (
               <span key={i}>
-                {segment.text}
+                {/* Modelul e rugat să nu folosească Markdown; eliminăm oricum asteriscurile rămase. */}
+                {segment.text.replace(/\*\*/g, "")}
                 {segment.citations.map((c, j) => {
                   const manual = state.manuals[c.manual];
                   if (!manual) return null;

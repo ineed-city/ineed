@@ -35,25 +35,25 @@ export async function askQuestion(_prev: AskState, formData: FormData): Promise<
   // RLS alege ce manuale vede fiecare: utilizatorii obișnuiți doar pe cele de utilizare.
   const { data: product } = await supabase
     .from("products")
-    .select("model, manufacturers(name), manuals(title, kind, anthropic_file_id, source_url, status)")
+    .select("model, manufacturers(name), manuals(title, kind, page_texts, source_url, status)")
     .eq("id", productId)
     .single();
   const manufacturer = product?.manufacturers as unknown as { name: string } | null;
   const manuals = (product?.manuals ?? []).filter(
-    (m) => m.status === "aprobat" && m.anthropic_file_id,
+    (m) => m.status === "aprobat" && m.page_texts?.length,
   );
   if (!product || !manufacturer || manuals.length === 0) {
-    return { status: "error", ...EMPTY, error: "Produsul nu are încă manuale aprobate." };
+    return { status: "error", ...EMPTY, error: "Produsul nu are încă manuale pregătite (aprobate și cu text extras)." };
   }
 
   const notice = ANRE_TOPICS.test(question) ? ANRE_NOTICE : undefined;
   try {
-    const { segments, refused } = await answerFromManuals(
+    const { segments, manuals: used, refused } = await answerFromManuals(
       `${manufacturer.name} ${product.model}`,
       manuals.map((m) => ({
         title: m.title,
         kind: m.kind,
-        fileId: m.anthropic_file_id!,
+        pages: m.page_texts as string[],
         sourceUrl: m.source_url,
       })),
       question,
@@ -64,7 +64,8 @@ export async function askQuestion(_prev: AskState, formData: FormData): Promise<
     return {
       status: "answered",
       segments,
-      manuals: manuals.map((m) => ({ title: m.title, sourceUrl: m.source_url })),
+      // Citările se referă la manualele citite efectiv, în ordinea trimisă.
+      manuals: used.map((m) => ({ title: m.title, sourceUrl: m.sourceUrl })),
       notice,
     };
   } catch (error) {

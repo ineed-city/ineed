@@ -129,6 +129,13 @@ export async function findManuals(_prev: FindState, formData: FormData): Promise
         .select("product_id, anthropic_file_id")
         .eq("sha256", pdf.sha256);
       if (same?.some((m) => m.product_id === product.id)) {
+        // Manualele salvate înainte de extragerea textului primesc textul acum.
+        await supabase
+          .from("manuals")
+          .update({ page_texts: pdf.pages, page_count: pdf.pageCount })
+          .eq("product_id", product.id)
+          .eq("sha256", pdf.sha256)
+          .is("page_texts", null);
         lines.push(`Există deja: ${candidate.title}`);
         continue;
       }
@@ -153,6 +160,7 @@ export async function findManuals(_prev: FindState, formData: FormData): Promise
         source_url: pdf.finalUrl,
         sha256: pdf.sha256,
         page_count: pdf.pageCount,
+        page_texts: pdf.pages,
         anthropic_file_id: fileId,
         official: pdf.official,
         // Oficial: aprobat automat (a trecut verificările de domeniu, PDF și amprentă).
@@ -193,4 +201,43 @@ export async function setSearchMode(formData: FormData) {
     throw new Error("Modul de căutare nu a putut fi salvat.");
   }
   refresh();
+}
+
+export type BackfillState = { status: "idle" | "done"; lines: string[] };
+
+// Extrage textul pe pagini pentru manualele salvate înainte de această funcție:
+// descarcă din nou PDF-ul de la sursă și verifică amprenta înainte de salvare.
+export async function backfillPageTexts(): Promise<BackfillState> {
+  const supabase = await requireAdmin();
+  const { data: manuals } = await supabase
+    .from("manuals")
+    .select("id, title, source_url, sha256, products(manufacturers(domains, search_mode))")
+    .is("page_texts", null);
+
+  if (!manuals?.length) return { status: "done", lines: ["Toate manualele au deja text."] };
+
+  const lines: string[] = [];
+  for (const manual of manuals) {
+    const manufacturer = (manual.products as unknown as {
+      manufacturers: { domains: string[]; search_mode: SearchMode };
+    } | null)?.manufacturers;
+    try {
+      if (!manufacturer) throw new Error("producător lipsă");
+      const pdf = await downloadPdf(manual.source_url, manufacturer.domains, manufacturer.search_mode);
+      if (pdf.sha256 !== manual.sha256) throw new Error("PDF-ul de la sursă s-a schimbat");
+      const { error } = await supabase
+        .from("manuals")
+        .update({ page_texts: pdf.pages, page_count: pdf.pageCount })
+        .eq("id", manual.id);
+      if (error) throw new Error(error.message);
+      lines.push(`Text extras: ${manual.title} (${pdf.pageCount} pag.)`);
+    } catch (error) {
+      console.error("backfillPageTexts failed:", manual.id, error);
+      const reason = error instanceof Error ? error.message : "eroare necunoscută";
+      lines.push(`Sărit: ${manual.title} (${reason})`);
+    }
+  }
+
+  refresh();
+  return { status: "done", lines };
 }

@@ -6,6 +6,7 @@ import { getRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Brand } from "../ui/brand";
 import { addProduct, setManualStatus, setSearchMode, updateDomains } from "./actions";
+import { BackfillButton } from "./backfill-button";
 import { FindManualsButton } from "./find-manuals-button";
 
 export const metadata: Metadata = { title: "Admin · iNeed" };
@@ -65,8 +66,10 @@ async function AdminContent() {
         <h1 className="text-3xl font-medium tracking-[-1px]">Produse și manuale</h1>
         <p className="text-muted">
           Domeniile aprobate sunt singurele site-uri pe care AI-ul are voie să caute
-          manuale. Manualele găsite apar aici ca „propus” până le aprobi.
+          manuale. Manualele de pe site-ul oficial se aprobă automat; cele de pe alte
+          site-uri apar ca „propus” până le aprobi.
         </p>
+        <BackfillButton />
       </div>
 
       {CATEGORIES.map((category) => (

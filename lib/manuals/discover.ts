@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { toFile } from "@anthropic-ai/sdk";
+import { extractText, getDocumentProxy } from "unpdf";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { z } from "zod";
@@ -108,6 +109,13 @@ function isPermittedHost(hostname: string, domains: string[], mode: SearchMode) 
   return mode === "extins" || isAllowedHost(host, domains);
 }
 
+// Extrage textul fiecărei pagini. Paginile fără text (doar imagini) rămân goale.
+export async function extractPages(buffer: Buffer) {
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const { text } = await extractText(pdf, { mergePages: false });
+  return text.map((t) => t.trim());
+}
+
 // Claude primește PDF-uri de cel mult 32 MB într-o cerere.
 const MAX_PDF_BYTES = 32 * 1024 * 1024;
 
@@ -115,6 +123,8 @@ export type DownloadedPdf = {
   buffer: Buffer;
   sha256: string;
   pageCount: number | null;
+  // Textul fiecărei pagini, în ordine (pagina 1 = pages[0]).
+  pages: string[];
   finalUrl: string;
   // true dacă PDF-ul vine de pe un domeniu oficial al producătorului.
   official: boolean;
@@ -155,13 +165,13 @@ export async function downloadPdf(
   }
 
   const sha256 = createHash("sha256").update(buffer).digest("hex");
-  // Număr aproximativ de pagini; în unele PDF-uri comprimate nu poate fi citit.
-  const pages = buffer.toString("latin1").match(/\/Type\s*\/Page(?!s)/g)?.length ?? 0;
+  const pages = await extractPages(buffer);
 
   return {
     buffer,
     sha256,
-    pageCount: pages || null,
+    pageCount: pages.length || null,
+    pages,
     finalUrl: finalUrl.toString(),
     official: isAllowedHost(finalUrl.hostname, domains),
   };
