@@ -79,7 +79,7 @@ export async function setManualStatus(formData: FormData) {
 
 export type FindState = { status: "idle" | "done" | "error"; lines: string[] };
 
-// Caută manualele oficiale ale unui produs și le salvează ca „propus”.
+// Caută manualele oficiale ale unui produs și le salvează aprobate.
 export async function findManuals(_prev: FindState, formData: FormData): Promise<FindState> {
   const productId = Number(formData.get("productId"));
   const supabase = await requireAdmin();
@@ -108,6 +108,7 @@ export async function findManuals(_prev: FindState, formData: FormData): Promise
     return { status: "done", lines: ["Nu am găsit manuale pe domeniile aprobate."] };
   }
 
+  const { data: claims } = await supabase.auth.getClaims();
   const lines: string[] = [];
   for (const candidate of candidates) {
     try {
@@ -134,9 +135,13 @@ export async function findManuals(_prev: FindState, formData: FormData): Promise
         sha256: pdf.sha256,
         page_count: pdf.pageCount,
         anthropic_file_id: fileId,
+        // Aprobat automat: a trecut verificările de domeniu, PDF și amprentă.
+        // Un manual greșit se poate respinge oricând din pagina de admin.
+        status: "aprobat",
+        approved_by: claims?.claims?.sub,
       });
       if (error) throw new Error(error.message);
-      lines.push(`Propus: ${candidate.title}`);
+      lines.push(`Aprobat automat: ${candidate.title}`);
     } catch (error) {
       console.error("manual candidate failed:", candidate.url, error);
       const reason = error instanceof Error ? error.message : "eroare necunoscută";
