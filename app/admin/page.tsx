@@ -6,8 +6,12 @@ import { getRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Brand } from "../ui/brand";
 import { addProduct, setManualStatus, updateDomains } from "./actions";
+import { FindManualsButton } from "./find-manuals-button";
 
 export const metadata: Metadata = { title: "Admin · iNeed" };
+
+// Căutarea manualelor (AI + descărcări) poate dura câteva minute.
+export const maxDuration = 300;
 
 const CATEGORIES = [
   { key: "camere", label: "Camere video" },
@@ -139,6 +143,7 @@ async function AdminContent() {
                             ))}
                           </ul>
                         )}
+                        <FindManualsButton productId={p.id} />
                       </div>
                     ))}
                   </div>
