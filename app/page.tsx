@@ -3,8 +3,11 @@ import { Suspense } from "react";
 import { getRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./auth/actions";
-import { RequestBox } from "./request-box";
+import { RequestBox, type ProductOption } from "./request-box";
 import { Brand, ConciergeMark } from "./ui/brand";
+
+// Răspunsul AI din manuale poate dura câteva zeci de secunde.
+export const maxDuration = 120;
 
 export default function Home() {
   return (
@@ -29,7 +32,10 @@ export default function Home() {
           Un răspuns util. Oamenii potriviți. Următorul pas.
         </p>
         <div className="mt-4 w-full">
-          <RequestBox />
+          {/* Produsele se citesc la cerere (depind de cont), deci stau în Suspense. */}
+          <Suspense fallback={<RequestBox products={[]} />}>
+            <ProductRequestBox />
+          </Suspense>
         </div>
       </main>
 
@@ -64,4 +70,23 @@ async function UserMenu() {
       </form>
     </div>
   );
+}
+
+// Doar produsele cu cel puțin un manual aprobat pot primi întrebări.
+async function ProductRequestBox() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("products")
+    .select("id, model, manufacturers(name), manuals!inner(status)")
+    .eq("manuals.status", "aprobat")
+    .order("model");
+
+  const products: ProductOption[] = (data ?? [])
+    .map((p) => ({
+      id: p.id,
+      label: `${(p.manufacturers as unknown as { name: string } | null)?.name ?? ""} ${p.model}`.trim(),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return <RequestBox products={products} />;
 }
