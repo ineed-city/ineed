@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { getRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Brand } from "../ui/brand";
-import { addProduct, setManualStatus, updateDomains } from "./actions";
+import { addProduct, setManualStatus, setSearchMode, updateDomains } from "./actions";
 import { FindManualsButton } from "./find-manuals-button";
 
 export const metadata: Metadata = { title: "Admin · iNeed" };
@@ -50,7 +50,7 @@ async function AdminContent() {
   const { data: manufacturers, error } = await supabase
     .from("manufacturers")
     .select(
-      "id, name, category, domains, products(id, model, manuals(id, kind, title, source_url, status, page_count))",
+      "id, name, category, domains, search_mode, products(id, model, manuals(id, kind, title, source_url, status, page_count, official))",
     )
     .order("name");
 
@@ -82,7 +82,28 @@ async function AdminContent() {
                   key={m.id}
                   className="flex flex-col gap-4 rounded-[22px] border border-line bg-white p-5"
                 >
-                  <h3 className="text-lg font-medium">{m.name}</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-lg font-medium">{m.name}</h3>
+                    <form action={setSearchMode} className="flex items-center gap-2 text-xs">
+                      <input type="hidden" name="manufacturerId" value={m.id} />
+                      <input
+                        type="hidden"
+                        name="mode"
+                        value={m.search_mode === "extins" ? "oficial" : "extins"}
+                      />
+                      <span className="text-muted">
+                        {m.search_mode === "extins"
+                          ? "Caută și pe alte site-uri"
+                          : "Doar site-ul oficial"}
+                      </span>
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-line px-2 py-0.5 hover:bg-tile"
+                      >
+                        {m.search_mode === "extins" ? "Doar oficial" : "Extinde"}
+                      </button>
+                    </form>
+                  </div>
 
                   <form action={updateDomains} className="flex flex-col gap-2">
                     <input type="hidden" name="manufacturerId" value={m.id} />
@@ -122,6 +143,11 @@ async function AdminContent() {
                                   {manual.status}
                                 </span>
                                 <span className="text-muted">{manual.kind}</span>
+                                {!manual.official && (
+                                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">
+                                    neoficial · {new URL(manual.source_url).hostname}
+                                  </span>
+                                )}
                                 <a
                                   href={manual.source_url}
                                   target="_blank"

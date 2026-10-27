@@ -2,7 +2,13 @@
 
 import { refresh } from "next/cache";
 import { getRole } from "@/lib/auth";
-import { downloadPdf, searchManuals, uploadPdf } from "@/lib/manuals/discover";
+import {
+  downloadPdf,
+  searchManuals,
+  uploadPdf,
+  verifyPdf,
+  type SearchMode,
+} from "@/lib/manuals/discover";
 import { createClient } from "@/lib/supabase/server";
 
 // Fiecare acțiune verifică rolul pe server: Server Actions pot fi apelate
@@ -79,54 +85,67 @@ export async function setManualStatus(formData: FormData) {
 
 export type FindState = { status: "idle" | "done" | "error"; lines: string[] };
 
-// Caută manualele oficiale ale unui produs și le salvează aprobate.
+// Caută manualele unui produs. Cele de pe site-ul oficial se aprobă automat;
+// cele de pe alte site-uri (căutare extinsă) trec prin verificare și rămân „propus”.
 export async function findManuals(_prev: FindState, formData: FormData): Promise<FindState> {
   const productId = Number(formData.get("productId"));
   const supabase = await requireAdmin();
 
   const { data: product } = await supabase
     .from("products")
-    .select("id, model, manufacturers(name, domains)")
+    .select("id, model, manufacturers(name, domains, search_mode)")
     .eq("id", productId)
     .single();
   const manufacturer = product?.manufacturers as unknown as
-    | { name: string; domains: string[] }
+    | { name: string; domains: string[]; search_mode: SearchMode }
     | null;
   if (!product || !manufacturer) return { status: "error", lines: ["Produsul nu există."] };
-  if (manufacturer.domains.length === 0) {
+  const mode = manufacturer.search_mode;
+  if (mode === "oficial" && manufacturer.domains.length === 0) {
     return { status: "error", lines: ["Producătorul nu are domenii aprobate."] };
   }
 
   let candidates;
   try {
-    candidates = await searchManuals(manufacturer.name, product.model, manufacturer.domains);
+    candidates = await searchManuals(manufacturer.name, product.model, manufacturer.domains, mode);
   } catch (error) {
     console.error("searchManuals failed:", error);
     return { status: "error", lines: ["Căutarea cu AI a eșuat. Detalii în jurnalele Vercel."] };
   }
   if (candidates.length === 0) {
-    return { status: "done", lines: ["Nu am găsit manuale pe domeniile aprobate."] };
+    return { status: "done", lines: ["Nu am găsit manuale."] };
   }
 
   const { data: claims } = await supabase.auth.getClaims();
   const lines: string[] = [];
   for (const candidate of candidates) {
     try {
-      const pdf = await downloadPdf(candidate.url, manufacturer.domains);
+      const pdf = await downloadPdf(candidate.url, manufacturer.domains, mode);
 
-      const { data: existing } = await supabase
+      // Același PDF (aceeași amprentă) poate aparține mai multor produse,
+      // ex. un manual comun pentru o familie întreagă de centrale.
+      const { data: same } = await supabase
         .from("manuals")
-        .select("id")
-        .eq("product_id", product.id)
-        .eq("sha256", pdf.sha256)
-        .maybeSingle();
-      if (existing) {
+        .select("product_id, anthropic_file_id")
+        .eq("sha256", pdf.sha256);
+      if (same?.some((m) => m.product_id === product.id)) {
         lines.push(`Există deja: ${candidate.title}`);
         continue;
       }
+      const reusedFileId = same?.find((m) => m.anthropic_file_id)?.anthropic_file_id ?? null;
 
-      const filename = `${manufacturer.name}-${product.model}-${candidate.kind}.pdf`;
-      const fileId = await uploadPdf(pdf, filename);
+      // Un PDF de pe alt site decât al producătorului e citit întâi de Claude.
+      if (!pdf.official && !reusedFileId) {
+        const verdict = await verifyPdf(pdf, manufacturer.name, product.model);
+        if (!verdict.ok) {
+          lines.push(`Sărit: ${candidate.title} (${verdict.reason})`);
+          continue;
+        }
+      }
+
+      const fileId =
+        reusedFileId ??
+        (await uploadPdf(pdf, `${manufacturer.name}-${product.model}-${candidate.kind}.pdf`));
       const { error } = await supabase.from("manuals").insert({
         product_id: product.id,
         kind: candidate.kind,
@@ -135,13 +154,19 @@ export async function findManuals(_prev: FindState, formData: FormData): Promise
         sha256: pdf.sha256,
         page_count: pdf.pageCount,
         anthropic_file_id: fileId,
-        // Aprobat automat: a trecut verificările de domeniu, PDF și amprentă.
-        // Un manual greșit se poate respinge oricând din pagina de admin.
-        status: "aprobat",
-        approved_by: claims?.claims?.sub,
+        official: pdf.official,
+        // Oficial: aprobat automat (a trecut verificările de domeniu, PDF și amprentă).
+        // Neoficial: rămâne „propus” până îl aprobă adminul.
+        status: pdf.official ? "aprobat" : "propus",
+        approved_by: pdf.official ? claims?.claims?.sub : null,
       });
       if (error) throw new Error(error.message);
-      lines.push(`Aprobat automat: ${candidate.title}`);
+
+      const source = pdf.official ? "" : ` · neoficial, ${new URL(pdf.finalUrl).hostname}`;
+      const reused = reusedFileId ? " · fișier refolosit" : "";
+      lines.push(
+        `${pdf.official ? "Aprobat automat" : "Propus"}: ${candidate.title}${source}${reused}`,
+      );
     } catch (error) {
       console.error("manual candidate failed:", candidate.url, error);
       const reason = error instanceof Error ? error.message : "eroare necunoscută";
@@ -151,4 +176,21 @@ export async function findManuals(_prev: FindState, formData: FormData): Promise
 
   refresh();
   return { status: "done", lines };
+}
+
+export async function setSearchMode(formData: FormData) {
+  const manufacturerId = Number(formData.get("manufacturerId"));
+  const mode = String(formData.get("mode"));
+  if (!manufacturerId || (mode !== "oficial" && mode !== "extins")) return;
+
+  const supabase = await requireAdmin();
+  const { error } = await supabase
+    .from("manufacturers")
+    .update({ search_mode: mode })
+    .eq("id", manufacturerId);
+  if (error) {
+    console.error("setSearchMode failed:", error.code, error.message);
+    throw new Error("Modul de căutare nu a putut fi salvat.");
+  }
+  refresh();
 }
