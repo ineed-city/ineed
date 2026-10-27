@@ -35,9 +35,35 @@ export async function proxy(request: NextRequest) {
 
   // Nu pune cod între createServerClient și getClaims():
   // getClaims() verifică tokenul și declanșează reîmprospătarea.
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
+  const isLoggedIn = Boolean(data?.claims);
+
+  const { pathname } = request.nextUrl;
+  const isPublic = pathname.startsWith("/login") || pathname.startsWith("/auth/callback");
+
+  // Cine nu e logat ajunge la /login; cine e logat nu mai vede /login.
+  if (!isLoggedIn && !isPublic) {
+    return redirectWithCookies(request, response, "/login");
+  }
+  if (isLoggedIn && pathname.startsWith("/login")) {
+    return redirectWithCookies(request, response, "/");
+  }
 
   return response;
+}
+
+// Redirecționează păstrând cookie-urile de sesiune puse mai sus de Supabase.
+function redirectWithCookies(
+  request: NextRequest,
+  response: NextResponse,
+  pathname: string,
+) {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = "";
+  const redirect = NextResponse.redirect(url);
+  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+  return redirect;
 }
 
 export const config = {
