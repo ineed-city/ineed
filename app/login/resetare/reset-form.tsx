@@ -11,7 +11,7 @@ export function ResetForm() {
 
   if (state.status === "sent") {
     return (
-      <p className="rounded-lg bg-green-50 p-4 text-green-900 dark:bg-green-950 dark:text-green-100">
+      <p className="rounded-xl bg-tile p-4 text-ink">
         Dacă adresa are cont în iNeed, ți-am trimis un link pentru o parolă nouă.
         Deschide-l în acest browser.
       </p>
@@ -30,21 +30,21 @@ export function ResetForm() {
         required
         autoComplete="email"
         placeholder="nume@exemplu.ro"
-        className="rounded-lg border border-zinc-300 bg-transparent px-4 py-3 dark:border-zinc-700"
+        className="rounded-xl border border-line bg-white px-4 py-3 focus:border-brand focus:outline-none"
       />
       {state.status === "error" && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.message}</p>
+        <p className="text-sm text-red-700">{state.message}</p>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+        className="rounded-xl bg-brand px-4 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {pending ? "Se trimite..." : "Trimite-mi linkul de resetare"}
       </button>
       <Link
         href="/login"
-        className="text-center text-sm text-zinc-600 underline dark:text-zinc-400"
+        className="text-center text-sm text-muted underline"
       >
         Înapoi la logare
       </Link>

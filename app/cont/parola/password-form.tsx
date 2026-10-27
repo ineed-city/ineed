@@ -12,7 +12,7 @@ export function PasswordForm() {
   if (state.status === "saved") {
     return (
       <div className="flex flex-col gap-4">
-        <p className="rounded-lg bg-green-50 p-4 text-green-900 dark:bg-green-950 dark:text-green-100">
+        <p className="rounded-xl bg-tile p-4 text-ink">
           Parola a fost salvată. De acum intri cu emailul și parola, de pe orice
           dispozitiv.
         </p>
@@ -35,7 +35,7 @@ export function PasswordForm() {
         required
         minLength={8}
         autoComplete="new-password"
-        className="rounded-lg border border-zinc-300 bg-transparent px-4 py-3 dark:border-zinc-700"
+        className="rounded-xl border border-line bg-white px-4 py-3 focus:border-brand focus:outline-none"
       />
       <label htmlFor="confirm" className="text-sm font-medium">
         Repetă parola
@@ -47,15 +47,15 @@ export function PasswordForm() {
         required
         minLength={8}
         autoComplete="new-password"
-        className="rounded-lg border border-zinc-300 bg-transparent px-4 py-3 dark:border-zinc-700"
+        className="rounded-xl border border-line bg-white px-4 py-3 focus:border-brand focus:outline-none"
       />
       {state.status === "error" && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.message}</p>
+        <p className="text-sm text-red-700">{state.message}</p>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+        className="rounded-xl bg-brand px-4 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {pending ? "Se salvează..." : "Salvează parola"}
       </button>

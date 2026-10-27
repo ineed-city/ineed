@@ -21,7 +21,7 @@ export function LoginForm() {
         required
         autoComplete="email"
         placeholder="nume@exemplu.ro"
-        className="rounded-lg border border-zinc-300 bg-transparent px-4 py-3 dark:border-zinc-700"
+        className="rounded-xl border border-line bg-white px-4 py-3 focus:border-brand focus:outline-none"
       />
       <label htmlFor="password" className="text-sm font-medium">
         Parola
@@ -32,21 +32,21 @@ export function LoginForm() {
         type="password"
         required
         autoComplete="current-password"
-        className="rounded-lg border border-zinc-300 bg-transparent px-4 py-3 dark:border-zinc-700"
+        className="rounded-xl border border-line bg-white px-4 py-3 focus:border-brand focus:outline-none"
       />
       {state.status === "error" && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.message}</p>
+        <p className="text-sm text-red-700">{state.message}</p>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+        className="rounded-xl bg-brand px-4 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {pending ? "Se verifică..." : "Intră în cont"}
       </button>
       <Link
         href="/login/resetare"
-        className="text-center text-sm text-zinc-600 underline dark:text-zinc-400"
+        className="text-center text-sm text-muted underline"
       >
         Ai uitat parola?
       </Link>
