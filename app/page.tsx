@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { getRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./auth/actions";
 import { RequestBox } from "./request-box";
@@ -43,10 +44,16 @@ async function UserMenu() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const email = data?.claims?.email;
+  const role = await getRole();
 
   return (
     <div className="flex items-center gap-4 text-xs text-muted">
       {email && <span className="hidden sm:inline">{email}</span>}
+      {role === "admin" && (
+        <Link href="/admin" className="hover:text-ink">
+          Admin
+        </Link>
+      )}
       <Link href="/cont/parola" className="hover:text-ink">
         Parola
       </Link>
