@@ -103,22 +103,28 @@ export function RequestBox({ products }: { products: ProductOption[] }) {
               {identity && "error" in identity && <p className="text-red-700">{identity.error}</p>}
               {identity && !("error" in identity) && (
                 <>
-                  {identity.productId ? (
-                    <p>
-                      Pare un <strong>{identity.label}</strong> ({CONFIDENCE[identity.confidence]}).
-                      {String(identity.productId) !== productId && (
-                        <>
-                          {" "}
-                          <button
-                            type="button"
-                            onClick={() => setProductId(String(identity.productId))}
-                            className="rounded-lg bg-tile px-2 py-0.5 text-brand hover:underline"
-                          >
-                            Da, e corect
-                          </button>
-                        </>
-                      )}
-                    </p>
+                  {identity.matches.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span>
+                        {identity.matches.length === 1
+                          ? `Pare un ${identity.matches[0].label} (${CONFIDENCE[identity.confidence]}).`
+                          : "Poate fi unul dintre:"}
+                      </span>
+                      {identity.matches.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setProductId(String(m.id))}
+                          className={`rounded-lg px-2 py-0.5 ${
+                            String(m.id) === productId
+                              ? "bg-brand text-white"
+                              : "bg-tile text-brand hover:underline"
+                          }`}
+                        >
+                          {identity.matches.length === 1 ? "Da, e corect" : m.label}
+                        </button>
+                      ))}
+                    </div>
                   ) : identity.label ? (
                     <p>
                       Pare un <strong>{identity.label}</strong>, dar nu are încă manuale în
