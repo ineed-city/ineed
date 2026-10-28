@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
 import { detectArea } from "@/lib/concierge/location";
 import { askConcierge } from "./concierge-actions";
@@ -13,7 +14,7 @@ export function ConciergeBox() {
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const cameraInput = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [context, setContext] = useState<string[]>([]);
   const [result, setResult] = useState<ConciergeResult | null>(null);
@@ -85,6 +86,7 @@ export function ConciergeBox() {
   }
 
   return <section lang={language} className="w-full text-left">
+    {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
       <label>{ro ? "Zona de căutare" : "Search area"} <input aria-label={ro ? "Oraș" : "City"} value={city} maxLength={100} disabled={pending || preparingPhoto || locating} placeholder={ro ? "Oraș sau zonă" : "City or area"} onChange={e => changeArea(e.target.value)} className="ml-2 w-40 rounded-lg border border-line bg-transparent px-2 py-1.5 text-ink" /></label>
       <label><span className="sr-only">Language</span><select aria-label="Language" value={language} disabled={pending || preparingPhoto || locating} onChange={e => setLanguage(e.target.value as "en" | "ro")} className="rounded-lg border border-line bg-transparent p-1.5"><option value="en">English</option><option value="ro">Română</option></select></label>
@@ -99,9 +101,8 @@ export function ConciergeBox() {
       <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending || preparingPhoto || locating} placeholder={photo ? (ro ? "Ce vrei să afli despre această poză?" : "What would you like to know about this photo?") : context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
       <div className="my-3 flex flex-wrap items-center gap-2 text-xs">
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
-        <input ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
         <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Adaugă o poză" : "Add a photo"}</button>
-        <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => cameraInput.current?.click()} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Fă o poză" : "Take a photo"}</button>
+        <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => setCameraOpen(true)} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Fă o poză" : "Take a photo"}</button>
         {preparingPhoto && <span role="status">{ro ? "Pregătesc poza…" : "Preparing photo…"}</span>}
       </div>
       {photoError && <p role="alert" className="mb-3 text-xs text-red-800">{photoError}</p>}

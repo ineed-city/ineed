@@ -152,3 +152,28 @@ test('photo compression refuses payloads that would overflow the action body',as
   await assert.rejects(photoModule.preparePhoto({type:'image/jpeg',size:1000}),/size/);
   assert.equal(closed,true);
 });
+
+const camera=load('lib/concierge/camera.ts');
+test('camera requests video only and stops tracks when closed',async()=>{
+  let stopped=0;let constraints;let received;
+  const stream={getTracks:()=>[{stop(){stopped++;}}]};
+  const stop=camera.startCamera({getUserMedia:async c=>{constraints=c;return stream;}},s=>{received=s;},()=>assert.fail());
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(constraints.audio,false);assert.equal(received,stream);
+  stop();stop();assert.equal(stopped,1);
+});
+test('closing before camera permission resolves stops the late stream',async()=>{
+  let grant;let stopped=0;
+  const stop=camera.startCamera({getUserMedia:()=>new Promise(resolve=>{grant=resolve;})},()=>assert.fail('closed preview must not receive a stream'),()=>assert.fail());
+  stop();grant({getTracks:()=>[{stop(){stopped++;}}]});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(stopped,1);
+});
+test('camera denial and unsupported browsers expose errors',async()=>{
+  let error;
+  camera.startCamera(undefined,()=>assert.fail(),name=>{error=name;});assert.equal(error,'Unsupported');
+  camera.startCamera({getUserMedia:async()=>{throw {name:'NotAllowedError'};}},()=>assert.fail(),name=>{error=name;});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(error,'NotAllowedError');
+});
+test('camera capture rejects frames before video is ready',async()=>{
+  await assert.rejects(camera.captureFrame({videoWidth:0,videoHeight:0,readyState:0}),/NotReady/);
+});

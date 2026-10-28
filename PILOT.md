@@ -46,3 +46,7 @@ The fast path removes one sequential model call for supported requests; it does 
 Add a photo or Take a photo attaches one image, with a preview and remove button. JPEG, PNG and WebP inputs up to 15 MB are resized to 1280 px and re-encoded as JPEG locally, stripping original metadata. Unsupported formats show an error. The encoded payload is capped at 650,000 characters, leaving room under the existing 1 MB action limit. Server validation rejects oversized/non-JPEG payloads.
 
 Nothing is uploaded until a question is submitted. The photo is sent to Claude as an image block for planning and answering, not as base64 text. Photos skip text-only fast routing. The visible attachment remains for follow-up questions until removed or a new request is started. New/replaced/removed photos clear old context. INeed adds no photo storage; provider retention still applies. Feedback exports omit the image. Device camera behavior depends on the browser.
+
+## Camera capture
+
+Take a photo opens an in-app getUserMedia video preview (no microphone), with Capture photo and Close camera controls. It prefers the rear camera on phones and uses available webcams on desktops. Browser/OS permission is required. Cancel, capture and unmount stop all tracks, including streams granted after cancellation. Captures pass through the existing local compression and question submission flow. Denied, missing, busy and unsupported cameras show actionable errors; Add a photo remains available.
