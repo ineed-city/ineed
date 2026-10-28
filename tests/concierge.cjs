@@ -15,13 +15,13 @@ function load(file, mocks = {}) {
   return testModule.exports;
 }
 const contracts = load('lib/concierge/contracts.ts');
-const request = {question:'A quiet restaurant for dinner',city:'Bucharest, Romania',language:'en',context:[]};
+const request = {question:'Find somewhere for tonight',city:'Bucharest, Romania',language:'en',context:[]};
 const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarification:null};
 function service(responses, chosen = plan) {
-  const calls=[];
-  const api={beta:{messages:{parse:async()=>({parsed_output:chosen}),create:async args=>{calls.push(args);return responses.shift();}}}};
+  const calls=[]; const planning=[];
+  const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
   const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
-  return {answerNeed,calls};
+  return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
 const searched={type:'web_search_tool_result',content:[]};
@@ -93,4 +93,28 @@ test('lookup failures do not silently choose another location',async()=>{
   const geo=fakeGeo({latitude:44,longitude:26,accuracy:10});
   await assert.rejects(detectArea(geo,async()=>({ok:false})),/lookup/);
   await assert.rejects(detectArea(geo,async()=>({ok:true,json:async()=>({countryName:'Romania'})})),/lookup/);
+});
+
+test('clear local requests skip planner but retain mandatory search evidence',async()=>{
+  const s=service([{stop_reason:'end_turn',content:[searched,cited]}]);
+  assert.equal((await s.answerNeed({...request,question:'I need a plumber'})).status,'answered');
+  assert.equal(s.planning.length,0);assert.equal(s.calls.length,1);assert.equal(s.calls[0].tools[0].name,'web_search');
+  const unverified=service([{stop_reason:'end_turn',content:[{type:'text',text:'An unverified plumber'}]}]);
+  assert.equal((await unverified.answerNeed({...request,question:'I need a plumber'})).status,'error');
+});
+test('simple ingredient requests skip planner and web search',async()=>{
+  for(const question of ['What can I cook with rice and chickpeas?','Ce pot găti cu orez și năut?']) {
+    const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Recipe'}]}]);
+    assert.equal((await s.answerNeed({...request,question})).status,'answered');
+    assert.equal(s.planning.length,0);assert.equal(s.calls[0].tools,undefined);
+  }
+});
+test('ambiguous, missing-location, follow-up and nonstandard food requests keep planner',()=>{
+  for(const change of [
+    {question:'I need a plumber',city:''},
+    {question:'I need a plumber',context:['Earlier request']},
+    {question:'What can I cook with wild mushrooms?'},
+    {question:'What can I cook with rice for a baby with allergies?'},
+    {question:'Help me with something'},
+  ]) assert.equal(contracts.quickPlan({...request,...change}),null);
 });

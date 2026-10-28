@@ -6,7 +6,7 @@ The home page is the general concierge. Existing security-product support is at 
 
 Uses existing Supabase variables and `ANTHROPIC_API_KEY` on the server. `CONCIERGE_MODEL` optionally overrides the existing manuals model. No database migration is required for the concierge. No secrets belong in Git.
 
-Requests are interpreted into a task brief, then answered directly or with Claude web search. Local/current recommendations require returned source citations. Search failure without citations returns an honest error instead of unverified recommendations. Search is limited to two uses per API round and two rounds; answer output is limited to 4,000 tokens per round with an 85-second overall abort signal and no automatic retries. The model prompt requests short answers; it is not a guarantee of factual correctness.
+Clear first-turn local requests with a selected area and simple ingredient-only recipes skip the separate AI planning call. Other requests and follow-ups are interpreted into a task brief. Answers use Claude with web search when needed. Local/current recommendations require returned source citations. Search failure without citations returns an honest error instead of unverified recommendations. Search is limited to two uses per API round and two rounds; answer output is limited to 4,000 tokens per round with an 85-second overall abort signal and no automatic retries. The model prompt requests short answers; it is not a guarantee of factual correctness.
 
 Authentication is verified inside the server action. Input lengths are validated server-side. A best-effort per-instance guard allows 15 concierge requests per account per hour and one concurrent request. This is NOT a distributed quota or hard spending cap: serverless instances/restarts reset it. Keep the pilot small and configure provider spending controls before inviting a wider audience. Existing manuals actions have their existing limits.
 
@@ -36,3 +36,7 @@ Pilot limitations: web search is not a complete local-business directory; no pre
 ## Optional device location
 
 Use my location requests a single browser position only on click. The browser sends rounded coordinates (3 decimals) directly to BigDataCloud; that provider also receives the IP and uses these signals to improve its location data. Only the resulting editable area name enters the concierge request. No coordinates are stored by INeed or sent to Claude. There is no IP fallback when permission is denied, no background tracking, and no default city. Changing the area clears old conversation context. Permission denial, timeout, poor accuracy and lookup failure keep manual area entry available.
+
+## Response latency
+
+The fast path removes one sequential model call for supported requests; it does not remove source validation. Answers target 100–150 words and three options. Search starts with a targeted query and may make a second when evidence is insufficient. The UI displays elapsed time, not invented completion percentages. Provider and search latency remain variable; no fixed response-time guarantee. Logs record planning and answer timing without request text.
