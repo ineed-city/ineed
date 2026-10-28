@@ -13,11 +13,14 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave }
   const dialog = useRef<HTMLDialogElement>(null);
   const active = useRef(true);
   const [draft, setDraft] = useState(city);
+  const locationRequest = useRef<AbortController | null>(null);
+  const [locating, setLocating] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<'saved' | 'removed' | 'failed' | 'detected' | 'denied' | 'locationError' | ''>('');
-  useEffect(() => {active.current = true; dialog.current?.showModal(); return () => {active.current = false;};}, []);
+  const [message, setMessage] = useState<'saved' | 'removed' | 'failed' | 'detected' | 'denied' | 'timeout' | 'unsupported' | 'locationError' | ''>('');
+  useEffect(() => {active.current = true; dialog.current?.showModal(); return () => {active.current = false; locationRequest.current?.abort();};}, []);
   async function save(patch: { city?: string; language?: 'en' | 'ro' }) {
     if (busy) return;
+    cancelLocation();
     setBusy(true); setMessage('');
     const ok = await onSave(patch);
     if (active.current) {
@@ -26,12 +29,27 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave }
       setBusy(false);
     }
   }
+  function cancelLocation() {
+    locationRequest.current?.abort();
+    locationRequest.current = null;
+    setLocating(false);
+  }
   async function locate() {
-    if (busy) return;
-    setBusy(true);setMessage('');
-    try {const area = await detectArea(navigator.geolocation); if (active.current) {setDraft(area);setMessage('detected');}}
-    catch(error) {if (active.current) setMessage(error instanceof Error && error.message === 'denied' ? 'denied' : 'locationError');}
-    finally {if (active.current) setBusy(false);}
+    if (busy || locating) return;
+    const controller = new AbortController();
+    locationRequest.current = controller;
+    setLocating(true);setMessage('');
+    try {
+      const area = await detectArea(navigator.geolocation, fetch, controller.signal);
+      if (active.current && !controller.signal.aborted) {setDraft(area);setMessage('detected');}
+    } catch(error) {
+      if (active.current && !controller.signal.aborted) {
+        const reason = error instanceof Error ? error.message : '';
+        setMessage(reason === 'denied' || reason === 'timeout' || reason === 'unsupported' ? reason : 'locationError');
+      }
+    } finally {
+      if (active.current && locationRequest.current === controller) {locationRequest.current = null;setLocating(false);}
+    }
   }
   const messages = {
     saved: ro ? 'Salvat în cont.' : 'Saved to your account.',
@@ -39,6 +57,8 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave }
     failed: ro ? 'Nu am putut salva. Încearcă din nou.' : 'Couldn’t save. Please try again.',
     detected: ro ? 'Verifică zona, apoi salvează.' : 'Check the area, then save it.',
     denied: ro ? 'Acces refuzat. Poți scrie zona manual.' : 'Permission denied. You can type your area instead.',
+    timeout: ro ? 'Browserul nu a răspuns. Deschide linkul direct în Safari sau Chrome, apoi încearcă din nou. Poți scrie orașul manual.' : 'The browser did not respond. Open the link directly in Safari or Chrome, then try again. You can also type your city.',
+    unsupported: ro ? 'Acest browser nu oferă localizare. Deschide linkul în Safari sau Chrome, ori scrie orașul.' : 'Location is unavailable in this browser. Open the link in Safari or Chrome, or type your city.',
     locationError: ro ? 'Nu am putut găsi zona. Scrie orașul manual.' : 'Couldn’t find your area. Type your city instead.',
   };
   return <dialog ref={dialog} id="settings-menu" aria-labelledby="settings-title" onCancel={event=>{event.preventDefault();onClose();}} className="settings-panel">
@@ -53,13 +73,16 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave }
     <section className="settings-group space-y-3 text-sm">
       <h3 className="font-medium">{ro ? 'Locația mea' : 'My location'}</h3>
       <p className="text-xs text-muted">{ro ? 'Alege o dată. Zona este salvată în cont și folosită la cererile viitoare, pe orice dispozitiv. O poți schimba când călătorești.' : 'Choose once. Your area is saved to your account for future requests on any device. Change it when you travel.'}</p>
-      <label className="block">{ro ? 'Oraș sau zonă' : 'City or area'}<input value={draft} disabled={busy} maxLength={100} onChange={e=>setDraft(e.target.value)} className="mt-2 w-full rounded-lg border border-line bg-white p-2" /></label>
-      <button type="button" disabled={busy} onClick={locate} className="text-brand underline">{busy ? (ro ? 'Se procesează…' : 'Working…') : (ro ? 'Folosește locația dispozitivului' : 'Use device location')}</button>
+      <label className="block">{ro ? 'Oraș sau zonă' : 'City or area'}<input value={draft} disabled={busy} maxLength={100} placeholder={ro ? 'Ex. București, România' : 'E.g. London, UK'} onChange={e=>{cancelLocation();setDraft(e.target.value);setMessage('');}} className="mt-2 w-full rounded-lg border border-line bg-white p-2" /></label>
+      <button type="button" disabled={busy || locating} onClick={locate} className="text-brand underline">{locating ? (ro ? 'Caut locația…' : 'Finding your location…') : (ro ? 'Folosește locația dispozitivului' : 'Use device location')}</button>
+      <div role="status" aria-live="polite" className="text-xs text-brand">
+        {locating ? <p>{ro ? 'Permite accesul dacă browserul întreabă. Dacă nu apare nimic, poți scrie orașul manual.' : 'Allow location if your browser asks. If nothing appears, you can type your city instead.'} <button type="button" onClick={cancelLocation} className="underline">{ro ? 'Anulează' : 'Cancel'}</button></p> : message ? <p>{messages[message]}</p> : null}
+      </div>
+      <details className="text-xs text-muted"><summary>{ro ? 'Pe iPhone nu se întâmplă nimic?' : 'Nothing happens on iPhone?'}</summary><p className="mt-2">{ro ? 'Deschide linkul direct în Safari. Verifică în Configurări → Intimitate și securitate → Servicii de localizare că localizarea este activată și permisă pentru browser. Dacă ai refuzat accesul pentru site, schimbă permisiunea din setările site-ului în Safari. Sau scrie orașul mai sus și apasă Salvează locația.' : 'Open the link directly in Safari. In Settings → Privacy & Security → Location Services, check that location is enabled and your browser can use it. If you denied this website access, change its location permission in Safari’s website settings. Or type your city above and choose Save location.'}</p></details>
       <p className="text-[11px] text-muted">{ro ? "Butonul de localizare trimite coordonate aproximative și IP-ul la BigDataCloud." : "Device location shares approximate coordinates and your IP with BigDataCloud."}</p><details className="text-xs text-muted"><summary className="cursor-pointer">{ro ? 'Cum folosim locația' : 'How location is used'}</summary><p className="mt-2">{ro ? 'Doar când apeși butonul, coordonatele aproximative și IP-ul ajung la BigDataCloud pentru identificarea zonei și îmbunătățirea datelor lor. Salvăm doar numele zonei în cont; acesta ajunge la Claude cu cererea. Fără urmărire în fundal.' : 'Only when you press the button, approximate coordinates and your IP go to BigDataCloud to find the area and improve their data. We save only the area name to your account; it goes to Claude with your request. No background tracking.'} <a href="https://www.bigdatacloud.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="underline">{ro ? 'Confidențialitate' : 'Privacy'}</a></p></details>
       <div className="flex flex-wrap gap-3"><button type="button" disabled={busy || !draft.trim()} onClick={()=>void save({city:draft.trim()})} className="rounded-lg bg-brand px-3 py-2 text-white disabled:opacity-50">{ro ? 'Salvează locația' : 'Save location'}</button><button type="button" disabled={busy} onClick={()=>void save({city:''})} className="text-brand underline">{city ? (ro ? 'Elimină locația salvată' : 'Remove saved location') : (ro ? 'Continuă fără locație' : 'Continue without location')}</button></div>
       <details className="text-xs text-muted"><summary className="cursor-pointer">{ro ? 'Revocă permisiunea browserului' : 'Revoke browser permission'}</summary><p className="mt-2">{ro ? 'Aplicația nu poate revoca permisiuni în browser. Deschide pictograma de setări de lângă adresa site-ului → Permisiuni/Setări site → Locație → Blochează sau Resetează. Pe telefon, verifică și setările de localizare ale browserului. Eliminarea locației salvate oprește folosirea ei în INeed.' : 'The app cannot revoke browser permissions. Open the settings icon beside the website address → Permissions/Site settings → Location → Block or Reset. On a phone, also check the browser’s location settings. Removing the saved location stops INeed using it.'}</p></details>
     </section>
-    {message && <p role="status" className="mb-4 text-sm text-brand">{messages[message]}</p>}
     <details className="settings-group text-xs text-muted"><summary className="cursor-pointer">{ro ? 'Confidențialitate și despre INeed' : 'Privacy & about INeed'}</summary><p className="mt-3">{ro ? 'Cererea și poza atașată ajung la Claude. Răspunsurile pot fi greșite; verifică sursele. Nu contactăm furnizori și nu facem rezervări în locul tău.' : 'Your request and attached photo go to Claude. Answers can be wrong; check the sources. We do not contact providers or make bookings for you.'}</p></details>
     <section className="settings-group space-y-4 text-sm"><h3 className="font-medium">{ro ? 'Contul meu' : 'My account'}</h3><p className="break-all text-xs text-muted">{email}</p><Link href="/cont/parola" className="block">{ro ? 'Schimbă parola' : 'Change password'}</Link><form action={signOut}><button type="submit">{ro ? 'Ieși din cont' : 'Sign out'}</button></form></section>
   </dialog>;
