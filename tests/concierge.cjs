@@ -70,3 +70,27 @@ test('truncated and refused answers are not presented as complete',async()=>{
     await assert.rejects(s.answerNeed(request),/Incomplete/);
   }
 });
+
+const {detectArea}=load('lib/concierge/location.ts');
+const fakeGeo=(coords)=>({getCurrentPosition(resolve){resolve({coords});}});
+test('location returns only area names and rounds coordinates before lookup',async()=>{
+  let sent;
+  const area=await detectArea(fakeGeo({latitude:44.426789,longitude:26.102345,accuracy:50}),async(url,options)=>{
+    sent={url,options};return {ok:true,json:async()=>({locality:'Sector 1',city:'Bucharest',principalSubdivision:'Bucharest',countryName:'Romania'})};
+  });
+  assert.equal(area,'Sector 1, Bucharest, Romania');
+  assert.equal(new URL(sent.url).searchParams.get('latitude'),'44.427');
+  assert.equal(new URL(sent.url).searchParams.get('longitude'),'26.102');
+  assert.equal(sent.options.credentials,'omit');
+});
+test('denial or inaccurate location never calls external lookup',async()=>{
+  const unexpected=async()=>{assert.fail('must not transmit location');};
+  await assert.rejects(detectArea({getCurrentPosition(resolve,reject){reject({code:1});}},unexpected),/denied/);
+  await assert.rejects(detectArea(fakeGeo({latitude:44,longitude:26,accuracy:50000}),unexpected),/inaccurate/);
+  await assert.rejects(detectArea(undefined,unexpected),/unsupported/);
+});
+test('lookup failures do not silently choose another location',async()=>{
+  const geo=fakeGeo({latitude:44,longitude:26,accuracy:10});
+  await assert.rejects(detectArea(geo,async()=>({ok:false})),/lookup/);
+  await assert.rejects(detectArea(geo,async()=>({ok:true,json:async()=>({countryName:'Romania'})})),/lookup/);
+});
