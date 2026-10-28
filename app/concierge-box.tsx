@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { detectArea } from "@/lib/concierge/location";
 import { askConcierge } from "./concierge-actions";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
@@ -12,6 +12,13 @@ export function ConciergeBox() {
   const [context, setContext] = useState<string[]>([]);
   const [result, setResult] = useState<ConciergeResult | null>(null);
   const [pending, setPending] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!pending) return;
+    const start = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [pending]);
   const [feedback, setFeedback] = useState("");
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
@@ -42,7 +49,7 @@ export function ConciergeBox() {
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (pending || locating || question.trim().length < 2) return;
-    setPending(true); setFeedback("");
+    setElapsed(0); setPending(true); setFeedback("");
     try {
       const answer = await askConcierge({ question: question.trim(), city, language, context });
       setResult(answer);
@@ -76,7 +83,7 @@ export function ConciergeBox() {
     </form>
     <p className="mt-2 text-[11px] text-muted">{ro ? "Cererea și orașul sunt trimise la Claude pentru răspuns și, când e nevoie, căutare web. Nu introduce date sensibile. Nu contactăm și nu rezervăm în locul tău." : "Your request and city go to Claude for an answer and web search when needed. Leave out sensitive details. We don’t contact or book on your behalf."}</p>
     <div role="status" aria-live="polite" aria-busy={pending} className="mt-6">
-      {pending && <p className="text-center text-sm text-sage">{ro ? "Înțeleg cererea și verific informațiile necesare…" : "Understanding your request and checking what’s needed…"}</p>}
+      {pending && <p className="text-center text-sm text-sage">{elapsed >= 10 ? (ro ? "Încă lucrez. Verificarea surselor web poate dura mai mult." : "Still working. Checking web sources can take longer.") : (ro ? "Pregătesc răspunsul…" : "Preparing your answer…")} <span aria-hidden="true">{elapsed}s</span></p>}
       {!pending && result && <article className="rounded-[22px] border border-line bg-white p-5 text-sm leading-relaxed">
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
         {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="mx-1 inline-block rounded bg-tile px-1.5 text-xs text-brand underline">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
