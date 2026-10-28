@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "iNeed",
-  description: "Ajutor AI pentru reparații și lucrări în casă",
+  description: "Your everyday concierge: useful answers, sourced options, and a clear next step.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
