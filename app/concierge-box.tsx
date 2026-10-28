@@ -3,13 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
-import { detectArea } from "@/lib/concierge/location";
+import { SettingsMenu } from "./settings-menu";
+import { savePreferences } from "./preference-actions";
+import { Brand, ConciergeMark } from "./ui/brand";
 import { askConcierge } from "./concierge-actions";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
 
-export function ConciergeBox() {
-  const [language, setLanguage] = useState<"en" | "ro">("en");
-  const [city, setCity] = useState("");
+export function ConciergeBox({ initial, email, isAdmin }: { initial: { language: "en" | "ro"; city: string; locationConfigured: boolean }; email: string; isAdmin: boolean }) {
+  const [language, setLanguage] = useState(initial.language);
+  const [city, setCity] = useState(initial.city);
+  const [locationConfigured, setLocationConfigured] = useState(initial.locationConfigured);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
   const [photo, setPhoto] = useState<string | undefined>();
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -27,15 +32,17 @@ export function ConciergeBox() {
     return () => clearInterval(timer);
   }, [pending]);
   const [feedback, setFeedback] = useState("");
-  const [locating, setLocating] = useState(false);
-  const [locationStatus, setLocationStatus] = useState("");
-  const locationBusy = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const ro = language === "ro";
   const examples = ro ? ["Am nevoie de un instalator pentru un robinet care curge", "Ce pot găti cu orez și năut?", "Un restaurant liniștit pentru cină"] : ["I need a plumber for a leaking tap", "What can I cook with rice and chickpeas?", "A quiet restaurant for dinner"];
 
-  function changeArea(value: string) {
-    setCity(value); setContext([]); setResult(null); setFeedback(""); setLocationStatus("");
+  async function updatePreferences(patch: { city?: string; language?: "en" | "ro" }) {
+    const saved = await savePreferences(patch).catch(() => ({ok:false}));
+    if (!saved.ok) return false;
+    if (patch.city !== undefined) {setCity(patch.city); setLocationConfigured(true);}
+    if (patch.language !== undefined) setLanguage(patch.language);
+    setContext([]); setResult(null); setFeedback(""); setPhotoError("");
+    return true;
   }
 
   function removePhoto() {
@@ -53,24 +60,9 @@ export function ConciergeBox() {
     } finally { setPreparingPhoto(false); }
   }
 
-  async function useLocation() {
-    if (locationBusy.current || pending) return;
-    locationBusy.current = true; setLocating(true); setLocationStatus("");
-    try {
-      const area = await detectArea(navigator.geolocation);
-      changeArea(area);
-      setLocationStatus(ro ? "Zonă detectată. Verifică sau modifică mai jos." : "Area detected. Check or edit it below.");
-    } catch (error) {
-      const denied = error instanceof Error && error.message === "denied";
-      setLocationStatus(denied
-        ? (ro ? "Acces refuzat. Scrie orașul sau permite locația în setările browserului." : "Location permission denied. Type your city or allow location in browser settings.")
-        : (ro ? "Nu am putut determina zona cu precizie. Scrie orașul sau încearcă din nou." : "Couldn’t reliably find your area. Type your city or try again."));
-    } finally { locationBusy.current = false; setLocating(false); }
-  }
-
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (pending || locating || preparingPhoto || question.trim().length < 2) return;
+    if (pending || preparingPhoto || question.trim().length < 2) return;
     setElapsed(0); setPending(true); setFeedback("");
     try {
       const answer = await askConcierge({ question: question.trim(), city, language, context, ...(photo ? { photo } : {}) });
@@ -85,24 +77,27 @@ export function ConciergeBox() {
     } finally { setPending(false); }
   }
 
-  return <section lang={language} className="w-full text-left">
+  return <div lang={language} className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col px-4 sm:px-8">
+    <header className="flex items-center justify-between py-6">
+      <Brand />
+      <button type="button" aria-label={ro ? "Deschide meniul" : "Open menu"} aria-expanded={menuOpen} aria-controls="settings-menu" disabled={pending || preparingPhoto} onClick={() => setMenuOpen(true)} className="rounded-xl border border-line p-3 text-brand hover:bg-tile disabled:opacity-50"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+    </header>
+    {menuOpen && <SettingsMenu language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} />}
+    <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col items-center justify-center gap-5 py-12 text-center sm:py-16">
+      <ConciergeMark />
+      <p className="mt-3 text-[10px] font-semibold uppercase tracking-[1.9px] text-muted">{ro ? "Mai puțin căutat. Mai mult trăit." : "Less searching. More living."}</p>
+      <h1 className="text-5xl font-medium leading-[1.13] tracking-[-2px] sm:text-[61px] sm:tracking-[-3px]">{ro ? "Orice îți trebuie." : "Whatever you need."}</h1>
+      <p className="text-[15px] text-muted">{ro ? "Un răspuns util. Opțiunile potrivite. Următorul pas." : "One useful answer. The right options. Your next step."}</p>
+      <section className="mt-3 w-full text-left">
     {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-      <label>{ro ? "Zona de căutare" : "Search area"} <input aria-label={ro ? "Oraș" : "City"} value={city} maxLength={100} disabled={pending || preparingPhoto || locating} placeholder={ro ? "Oraș sau zonă" : "City or area"} onChange={e => changeArea(e.target.value)} className="ml-2 w-40 rounded-lg border border-line bg-transparent px-2 py-1.5 text-ink" /></label>
-      <label><span className="sr-only">Language</span><select aria-label="Language" value={language} disabled={pending || preparingPhoto || locating} onChange={e => setLanguage(e.target.value as "en" | "ro")} className="rounded-lg border border-line bg-transparent p-1.5"><option value="en">English</option><option value="ro">Română</option></select></label>
-    </div>
-    <div className="mb-4 text-xs text-muted">
-      <button type="button" disabled={pending || preparingPhoto || locating} onClick={useLocation} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{locating ? (ro ? "Găsesc zona…" : "Finding your area…") : (ro ? "Folosește locația mea" : "Use my location")}</button>
-      <p className="mt-2 text-[11px]">{ro ? "Opțional: coordonatele aproximative și adresa IP ajung la BigDataCloud pentru identificarea zonei și îmbunătățirea datelor lor de localizare. Doar numele zonei ajunge la Claude când trimiți cererea. Fără urmărire în fundal." : "Optional: approximate coordinates and your IP go to BigDataCloud to identify your area and improve their location data. Only the area name goes to Claude when you send a request. No background tracking."} <a href="https://www.bigdatacloud.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="underline">{ro ? "Confidențialitate" : "Privacy"}</a></p>
-      {locationStatus && <p role="status" className="mt-2 text-brand">{locationStatus}</p>}
-    </div>
+    {(!locationConfigured || city) && <button type="button" disabled={pending || preparingPhoto} onClick={() => setMenuOpen(true)} className="mb-3 text-xs text-muted underline">{city ? `${ro ? "Zona" : "Area"}: ${city}` : (ro ? "Alege locația o singură dată pentru recomandări în apropiere" : "Set your location once for nearby recommendations")}</button>}
     <form onSubmit={submit} className="rounded-[22px] border border-line bg-white p-5 shadow-sm">
       <label htmlFor="need" className="sr-only">{ro ? "De ce ai nevoie?" : "What do you need?"}</label>
-      <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending || preparingPhoto || locating} placeholder={photo ? (ro ? "Ce vrei să afli despre această poză?" : "What would you like to know about this photo?") : context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
+      <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending || preparingPhoto} placeholder={photo ? (ro ? "Ce vrei să afli despre această poză?" : "What would you like to know about this photo?") : context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
       <div className="my-3 flex flex-wrap items-center gap-2 text-xs">
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
-        <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Adaugă o poză" : "Add a photo"}</button>
-        <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => setCameraOpen(true)} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Fă o poză" : "Take a photo"}</button>
+        <button type="button" disabled={pending || preparingPhoto} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Adaugă o poză" : "Add a photo"}</button>
+        <button type="button" disabled={pending || preparingPhoto} onClick={() => setCameraOpen(true)} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Fă o poză" : "Take a photo"}</button>
         {preparingPhoto && <span role="status">{ro ? "Pregătesc poza…" : "Preparing photo…"}</span>}
       </div>
       {photoError && <p role="alert" className="mb-3 text-xs text-red-800">{photoError}</p>}
@@ -114,10 +109,10 @@ export function ConciergeBox() {
       </div>}
       <div className="flex items-center justify-between gap-4">
         <span className="text-[11px] text-muted">{ro ? "Răspunsuri scurte. Surse când contează." : "Short answers. Sources where they matter."}</span>
-        <button disabled={pending || preparingPhoto || locating || question.trim().length < 2} type="submit" className="rounded-xl bg-brand px-5 py-2.5 text-sm text-white disabled:opacity-50">{pending ? (ro ? "Lucrez…" : "Working…") : (ro ? "Ajută-mă ↑" : "Help me ↑")}</button>
+        <button disabled={pending || preparingPhoto || question.trim().length < 2} type="submit" className="rounded-xl bg-brand px-5 py-2.5 text-sm text-white disabled:opacity-50">{pending ? (ro ? "Lucrez…" : "Working…") : (ro ? "Ajută-mă ↑" : "Help me ↑")}</button>
       </div>
     </form>
-    <p className="mt-2 text-[11px] text-muted">{ro ? "Cererea, poza atașată și orașul sunt trimise la Claude pentru răspuns și, când e nevoie, căutare web. Nu introduce date sensibile. Nu contactăm și nu rezervăm în locul tău." : "Your request, attached photo and city go to Claude for an answer and web search when needed. Leave out sensitive details. We don’t contact or book on your behalf."}</p>
+    <p className="mt-2 text-[11px] text-muted">{ro ? "Cererea și poza sunt procesate de Claude. Detalii în meniu → Confidențialitate." : "Your request and photo are processed by Claude. Details in menu → Privacy."}</p>
     <div role="status" aria-live="polite" aria-busy={pending} className="mt-6">
       {pending && <p className="text-center text-sm text-sage">{elapsed >= 10 ? (ro ? "Încă lucrez. Verificarea surselor web poate dura mai mult." : "Still working. Checking web sources can take longer.") : (ro ? "Pregătesc răspunsul…" : "Preparing your answer…")} <span aria-hidden="true">{elapsed}s</span></p>}
       {!pending && result && <article className="rounded-[22px] border border-line bg-white p-5 text-sm leading-relaxed">
@@ -133,5 +128,8 @@ export function ConciergeBox() {
       {result?.status === "answered" && <button className="text-brand underline" onClick={() => { const text = JSON.stringify({ context, city, result, feedback: "Add your feedback here / Scrie feedback aici" }, null, 2); const url = URL.createObjectURL(new Blob([text], {type:"text/plain"})); const a = document.createElement("a"); a.href=url;a.download="ineed-test-feedback.txt";a.click();URL.revokeObjectURL(url);setFeedback(ro ? "Descărcat. Adaugă observațiile și trimite organizatorului testului." : "Downloaded. Add your comments and share with the pilot organiser."); }}>{ro ? "Descarcă testul pentru feedback" : "Download this test for feedback"}</button>}
       {feedback && <p role="status" className="w-full text-muted">{feedback}</p>}
     </div>}
-  </section>;
+      </section>
+    </main>
+    <footer className="py-6 text-[11px] text-muted">{ro ? "Versiune de test · AI poate greși. Verifică sursele." : "Private pilot · AI can be mistaken. Check sources."}</footer>
+  </div>;
 }
