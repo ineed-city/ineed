@@ -10,7 +10,7 @@ export function LoginForm() {
   const [state, action, pending] = useActionState(signIn, initialState);
 
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form action={action} className="auth-form flex flex-col gap-4">
       <label htmlFor="email" className="text-sm font-medium">
         Adresa de email
       </label>
