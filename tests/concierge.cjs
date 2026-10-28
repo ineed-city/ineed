@@ -7,11 +7,11 @@ const ts = require('typescript');
 const path = require('node:path');
 
 // Execute the actual TypeScript modules with only external services substituted.
-function load(file, mocks = {}) {
+function load(file, mocks = {}, globals = {}) {
   const filename = path.join(__dirname, '..', file);
   const js = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const testModule = {exports:{}};
-  vm.runInNewContext(js, {module:testModule, exports:testModule.exports, require:name => name in mocks ? mocks[name] : require(name), URL, Date, AbortSignal, process:{env:{}}, console:{info(){}}}, {filename});
+  vm.runInNewContext(js, {module:testModule, exports:testModule.exports, require:name => name in mocks ? mocks[name] : require(name), URL, Date, AbortSignal, process:{env:{}}, console:{info(){}}, ...globals}, {filename});
   return testModule.exports;
 }
 const contracts = load('lib/concierge/contracts.ts');
@@ -117,4 +117,38 @@ test('ambiguous, missing-location, follow-up and nonstandard food requests keep 
     {question:'What can I cook with rice for a baby with allergies?'},
     {question:'Help me with something'},
   ]) assert.equal(contracts.quickPlan({...request,...change}),null);
+});
+
+const testPhoto='data:image/jpeg;base64,/9j/AAAA';
+test('photo validation rejects oversized, malformed and non-JPEG payloads',()=>{
+  assert.equal(contracts.RequestSchema.safeParse({...request,photo:testPhoto}).success,true);
+  for(const photo of ['https://example.com/image.jpg','data:image/svg+xml;base64,AAAA','data:image/jpeg;base64,not-an-image',testPhoto+'A'.repeat(650000)]) {
+    assert.equal(contracts.RequestSchema.safeParse({...request,photo}).success,false);
+  }
+});
+test('vision receives image blocks in both calls, never base64 inside text',async()=>{
+  const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'A visible object'}]}],{...plan,category:'general',needsWeb:false});
+  const input={...request,question:'What can I cook with rice and chickpeas?',photo:testPhoto};
+  assert.equal(contracts.quickPlan(input),null);
+  assert.equal((await s.answerNeed(input)).status,'answered');
+  for(const call of [s.planning[0],s.calls[0]]) {
+    const content=call.messages[0].content;
+    assert.equal(content[0].type,'image');assert.equal(content[0].source.data,'/9j/AAAA');
+    assert.equal(content[1].type,'text');assert.equal(content[1].text.includes('/9j/'),false);
+    assert.equal(JSON.parse(content[1].text).question,input.question);
+  }
+});
+test('photo preparation resizes locally and releases bitmap resources',async()=>{
+  let closed=false; const canvas={width:0,height:0,getContext:()=>({fillRect(){},drawImage(){}}),toDataURL:()=>testPhoto};
+  const photoModule=load('lib/concierge/photo.ts',{}, {createImageBitmap:async()=>({width:4000,height:3000,close(){closed=true;}}),document:{createElement:()=>canvas}});
+  assert.equal(await photoModule.preparePhoto({type:'image/png',size:1000}),testPhoto);
+  assert.equal(canvas.width,1280);assert.equal(canvas.height,960);assert.equal(closed,true);
+  await assert.rejects(photoModule.preparePhoto({type:'image/svg+xml',size:10}),/format/);
+  await assert.rejects(photoModule.preparePhoto({type:'image/jpeg',size:16000000}),/size/);
+});
+test('photo compression refuses payloads that would overflow the action body',async()=>{
+  let closed=false;
+  const photoModule=load('lib/concierge/photo.ts',{}, {createImageBitmap:async()=>({width:1280,height:1280,close(){closed=true;}}),document:{createElement:()=>({getContext:()=>({fillRect(){},drawImage(){}}),toDataURL:()=>testPhoto+'A'.repeat(650000)})}});
+  await assert.rejects(photoModule.preparePhoto({type:'image/jpeg',size:1000}),/size/);
+  assert.equal(closed,true);
 });
