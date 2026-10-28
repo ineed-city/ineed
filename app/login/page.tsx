@@ -7,9 +7,9 @@ export const metadata: Metadata = { title: "Intră în cont · iNeed" };
 
 export default function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4 py-16">
+    <main className="auth-shell">
       <Brand />
-      <h1 className="text-3xl font-medium tracking-[-1px]">Intră în cont</h1>
+      <div className="auth-intro"><h1>Bine ai revenit.</h1><p>Un singur loc pentru orice ai nevoie.</p></div>
       {/* searchParams se citesc la cerere, deci stau în Suspense (Cache Components). */}
       <Suspense fallback={null}>
         <LinkError searchParams={searchParams} />
