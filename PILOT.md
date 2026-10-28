@@ -31,4 +31,8 @@ Use an existing invited account. Share the invitation code privately, never the 
 7. Test on a phone. Confirm the input, answer and source links remain usable.
 8. Download the response for feedback; add whether it solved the need and any incorrect facts. Do not include private personal information.
 
-Pilot limitations: web search is not a complete local-business directory; no GPS, confirmed availability, booking, payment or provider vetting. Source links are evidence to inspect, not endorsements. Keep the first trial to a few invited testers before expanding.
+Pilot limitations: web search is not a complete local-business directory; no precise-distance ranking, confirmed availability, booking, payment or provider vetting. Source links are evidence to inspect, not endorsements. Keep the first trial to a few invited testers before expanding.
+
+## Optional device location
+
+Use my location requests a single browser position only on click. The browser sends rounded coordinates (3 decimals) directly to BigDataCloud; that provider also receives the IP and uses these signals to improve its location data. Only the resulting editable area name enters the concierge request. No coordinates are stored by INeed or sent to Claude. There is no IP fallback when permission is denied, no background tracking, and no default city. Changing the area clears old conversation context. Permission denial, timeout, poor accuracy and lookup failure keep manual area entry available.

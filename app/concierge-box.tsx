@@ -1,24 +1,47 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { detectArea } from "@/lib/concierge/location";
 import { askConcierge } from "./concierge-actions";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
 
 export function ConciergeBox() {
   const [language, setLanguage] = useState<"en" | "ro">("en");
-  const [city, setCity] = useState("Bucharest, Romania");
+  const [city, setCity] = useState("");
   const [question, setQuestion] = useState("");
   const [context, setContext] = useState<string[]>([]);
   const [result, setResult] = useState<ConciergeResult | null>(null);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [locationStatus, setLocationStatus] = useState("");
+  const locationBusy = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const ro = language === "ro";
   const examples = ro ? ["Am nevoie de un instalator pentru un robinet care curge", "Ce pot găti cu orez și năut?", "Un restaurant liniștit pentru cină"] : ["I need a plumber for a leaking tap", "What can I cook with rice and chickpeas?", "A quiet restaurant for dinner"];
 
+  function changeArea(value: string) {
+    setCity(value); setContext([]); setResult(null); setFeedback(""); setLocationStatus("");
+  }
+
+  async function useLocation() {
+    if (locationBusy.current || pending) return;
+    locationBusy.current = true; setLocating(true); setLocationStatus("");
+    try {
+      const area = await detectArea(navigator.geolocation);
+      changeArea(area);
+      setLocationStatus(ro ? "Zonă detectată. Verifică sau modifică mai jos." : "Area detected. Check or edit it below.");
+    } catch (error) {
+      const denied = error instanceof Error && error.message === "denied";
+      setLocationStatus(denied
+        ? (ro ? "Acces refuzat. Scrie orașul sau permite locația în setările browserului." : "Location permission denied. Type your city or allow location in browser settings.")
+        : (ro ? "Nu am putut determina zona cu precizie. Scrie orașul sau încearcă din nou." : "Couldn’t reliably find your area. Type your city or try again."));
+    } finally { locationBusy.current = false; setLocating(false); }
+  }
+
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (pending || question.trim().length < 2) return;
+    if (pending || locating || question.trim().length < 2) return;
     setPending(true); setFeedback("");
     try {
       const answer = await askConcierge({ question: question.trim(), city, language, context });
@@ -35,15 +58,20 @@ export function ConciergeBox() {
 
   return <section lang={language} className="w-full text-left">
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-      <label>{ro ? "Zona de căutare" : "Search area"} <input aria-label={ro ? "Oraș" : "City"} value={city} maxLength={100} disabled={pending} onChange={e => setCity(e.target.value)} className="ml-2 w-40 rounded-lg border border-line bg-transparent px-2 py-1.5 text-ink" /></label>
-      <label><span className="sr-only">Language</span><select aria-label="Language" value={language} disabled={pending} onChange={e => setLanguage(e.target.value as "en" | "ro")} className="rounded-lg border border-line bg-transparent p-1.5"><option value="en">English</option><option value="ro">Română</option></select></label>
+      <label>{ro ? "Zona de căutare" : "Search area"} <input aria-label={ro ? "Oraș" : "City"} value={city} maxLength={100} disabled={pending || locating} placeholder={ro ? "Oraș sau zonă" : "City or area"} onChange={e => changeArea(e.target.value)} className="ml-2 w-40 rounded-lg border border-line bg-transparent px-2 py-1.5 text-ink" /></label>
+      <label><span className="sr-only">Language</span><select aria-label="Language" value={language} disabled={pending || locating} onChange={e => setLanguage(e.target.value as "en" | "ro")} className="rounded-lg border border-line bg-transparent p-1.5"><option value="en">English</option><option value="ro">Română</option></select></label>
+    </div>
+    <div className="mb-4 text-xs text-muted">
+      <button type="button" disabled={pending || locating} onClick={useLocation} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{locating ? (ro ? "Găsesc zona…" : "Finding your area…") : (ro ? "Folosește locația mea" : "Use my location")}</button>
+      <p className="mt-2 text-[11px]">{ro ? "Opțional: coordonatele aproximative și adresa IP ajung la BigDataCloud pentru identificarea zonei și îmbunătățirea datelor lor de localizare. Doar numele zonei ajunge la Claude când trimiți cererea. Fără urmărire în fundal." : "Optional: approximate coordinates and your IP go to BigDataCloud to identify your area and improve their location data. Only the area name goes to Claude when you send a request. No background tracking."} <a href="https://www.bigdatacloud.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="underline">{ro ? "Confidențialitate" : "Privacy"}</a></p>
+      {locationStatus && <p role="status" className="mt-2 text-brand">{locationStatus}</p>}
     </div>
     <form onSubmit={submit} className="rounded-[22px] border border-line bg-white p-5 shadow-sm">
       <label htmlFor="need" className="sr-only">{ro ? "De ce ai nevoie?" : "What do you need?"}</label>
-      <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending} placeholder={context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
+      <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending || locating} placeholder={context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
       <div className="flex items-center justify-between gap-4">
         <span className="text-[11px] text-muted">{ro ? "Răspunsuri scurte. Surse când contează." : "Short answers. Sources where they matter."}</span>
-        <button disabled={pending || question.trim().length < 2} type="submit" className="rounded-xl bg-brand px-5 py-2.5 text-sm text-white disabled:opacity-50">{pending ? (ro ? "Lucrez…" : "Working…") : (ro ? "Ajută-mă ↑" : "Help me ↑")}</button>
+        <button disabled={pending || locating || question.trim().length < 2} type="submit" className="rounded-xl bg-brand px-5 py-2.5 text-sm text-white disabled:opacity-50">{pending ? (ro ? "Lucrez…" : "Working…") : (ro ? "Ajută-mă ↑" : "Help me ↑")}</button>
       </div>
     </form>
     <p className="mt-2 text-[11px] text-muted">{ro ? "Cererea și orașul sunt trimise la Claude pentru răspuns și, când e nevoie, căutare web. Nu introduce date sensibile. Nu contactăm și nu rezervăm în locul tău." : "Your request and city go to Claude for an answer and web search when needed. Leave out sensitive details. We don’t contact or book on your behalf."}</p>
