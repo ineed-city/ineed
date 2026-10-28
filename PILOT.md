@@ -40,3 +40,9 @@ Use my location requests a single browser position only on click. The browser se
 ## Response latency
 
 The fast path removes one sequential model call for supported requests; it does not remove source validation. Answers target 100–150 words and three options. Search starts with a targeted query and may make a second when evidence is insufficient. The UI displays elapsed time, not invented completion percentages. Provider and search latency remain variable; no fixed response-time guarantee. Logs record planning and answer timing without request text.
+
+## Photo questions
+
+Add a photo or Take a photo attaches one image, with a preview and remove button. JPEG, PNG and WebP inputs up to 15 MB are resized to 1280 px and re-encoded as JPEG locally, stripping original metadata. Unsupported formats show an error. The encoded payload is capped at 650,000 characters, leaving room under the existing 1 MB action limit. Server validation rejects oversized/non-JPEG payloads.
+
+Nothing is uploaded until a question is submitted. The photo is sent to Claude as an image block for planning and answering, not as base64 text. Photos skip text-only fast routing. The visible attachment remains for follow-up questions until removed or a new request is started. New/replaced/removed photos clear old context. INeed adds no photo storage; provider retention still applies. Feedback exports omit the image. Device camera behavior depends on the browser.

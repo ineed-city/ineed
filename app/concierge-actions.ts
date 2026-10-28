@@ -9,7 +9,7 @@ const usage = new Map<string, { count: number; expires: number; busy: boolean }>
 
 export async function askConcierge(raw: unknown): Promise<ConciergeResult> {
   const parsed = RequestSchema.safeParse(raw);
-  if (!parsed.success) return { status: "error", segments: [], message: "Please enter a request of 2–2,000 characters." };
+  if (!parsed.success) return { status: "error", segments: [], message: "Please enter 2–2,000 characters and use a valid photo under 650 KB. / Verifică întrebarea și poza." };
   const ro = parsed.data.language === "ro";
   try {
     const db = await createClient();

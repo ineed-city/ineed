@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { preparePhoto } from "@/lib/concierge/photo";
 import { detectArea } from "@/lib/concierge/location";
 import { askConcierge } from "./concierge-actions";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
@@ -8,6 +9,11 @@ import type { ConciergeResult } from "@/lib/concierge/contracts";
 export function ConciergeBox() {
   const [language, setLanguage] = useState<"en" | "ro">("en");
   const [city, setCity] = useState("");
+  const [photo, setPhoto] = useState<string | undefined>();
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
   const [question, setQuestion] = useState("");
   const [context, setContext] = useState<string[]>([]);
   const [result, setResult] = useState<ConciergeResult | null>(null);
@@ -31,6 +37,21 @@ export function ConciergeBox() {
     setCity(value); setContext([]); setResult(null); setFeedback(""); setLocationStatus("");
   }
 
+  function removePhoto() {
+    setPhoto(undefined); setPhotoError(""); setContext([]); setResult(null); setFeedback("");
+  }
+
+  async function attachPhoto(file: File | undefined) {
+    if (!file || pending || preparingPhoto) return;
+    setPreparingPhoto(true); setPhotoError("");
+    try {
+      const image = await preparePhoto(file);
+      setPhoto(image); setContext([]); setResult(null); setFeedback("");
+    } catch {
+      setPhotoError(ro ? "Nu am putut încărca poza. Alege un JPEG, PNG sau WebP de maximum 15 MB." : "Couldn’t load that photo. Choose a JPEG, PNG or WebP up to 15 MB.");
+    } finally { setPreparingPhoto(false); }
+  }
+
   async function useLocation() {
     if (locationBusy.current || pending) return;
     locationBusy.current = true; setLocating(true); setLocationStatus("");
@@ -48,10 +69,10 @@ export function ConciergeBox() {
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (pending || locating || question.trim().length < 2) return;
+    if (pending || locating || preparingPhoto || question.trim().length < 2) return;
     setElapsed(0); setPending(true); setFeedback("");
     try {
-      const answer = await askConcierge({ question: question.trim(), city, language, context });
+      const answer = await askConcierge({ question: question.trim(), city, language, context, ...(photo ? { photo } : {}) });
       setResult(answer);
       if (answer.status !== "error") {
         const reply = answer.status === "clarify" ? answer.message : answer.segments.map(s => s.text).join("");
@@ -65,23 +86,37 @@ export function ConciergeBox() {
 
   return <section lang={language} className="w-full text-left">
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-      <label>{ro ? "Zona de căutare" : "Search area"} <input aria-label={ro ? "Oraș" : "City"} value={city} maxLength={100} disabled={pending || locating} placeholder={ro ? "Oraș sau zonă" : "City or area"} onChange={e => changeArea(e.target.value)} className="ml-2 w-40 rounded-lg border border-line bg-transparent px-2 py-1.5 text-ink" /></label>
-      <label><span className="sr-only">Language</span><select aria-label="Language" value={language} disabled={pending || locating} onChange={e => setLanguage(e.target.value as "en" | "ro")} className="rounded-lg border border-line bg-transparent p-1.5"><option value="en">English</option><option value="ro">Română</option></select></label>
+      <label>{ro ? "Zona de căutare" : "Search area"} <input aria-label={ro ? "Oraș" : "City"} value={city} maxLength={100} disabled={pending || preparingPhoto || locating} placeholder={ro ? "Oraș sau zonă" : "City or area"} onChange={e => changeArea(e.target.value)} className="ml-2 w-40 rounded-lg border border-line bg-transparent px-2 py-1.5 text-ink" /></label>
+      <label><span className="sr-only">Language</span><select aria-label="Language" value={language} disabled={pending || preparingPhoto || locating} onChange={e => setLanguage(e.target.value as "en" | "ro")} className="rounded-lg border border-line bg-transparent p-1.5"><option value="en">English</option><option value="ro">Română</option></select></label>
     </div>
     <div className="mb-4 text-xs text-muted">
-      <button type="button" disabled={pending || locating} onClick={useLocation} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{locating ? (ro ? "Găsesc zona…" : "Finding your area…") : (ro ? "Folosește locația mea" : "Use my location")}</button>
+      <button type="button" disabled={pending || preparingPhoto || locating} onClick={useLocation} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{locating ? (ro ? "Găsesc zona…" : "Finding your area…") : (ro ? "Folosește locația mea" : "Use my location")}</button>
       <p className="mt-2 text-[11px]">{ro ? "Opțional: coordonatele aproximative și adresa IP ajung la BigDataCloud pentru identificarea zonei și îmbunătățirea datelor lor de localizare. Doar numele zonei ajunge la Claude când trimiți cererea. Fără urmărire în fundal." : "Optional: approximate coordinates and your IP go to BigDataCloud to identify your area and improve their location data. Only the area name goes to Claude when you send a request. No background tracking."} <a href="https://www.bigdatacloud.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="underline">{ro ? "Confidențialitate" : "Privacy"}</a></p>
       {locationStatus && <p role="status" className="mt-2 text-brand">{locationStatus}</p>}
     </div>
     <form onSubmit={submit} className="rounded-[22px] border border-line bg-white p-5 shadow-sm">
       <label htmlFor="need" className="sr-only">{ro ? "De ce ai nevoie?" : "What do you need?"}</label>
-      <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending || locating} placeholder={context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
+      <textarea id="need" ref={input} value={question} onChange={e => setQuestion(e.target.value)} maxLength={2000} minLength={2} required rows={3} disabled={pending || preparingPhoto || locating} placeholder={photo ? (ro ? "Ce vrei să afli despre această poză?" : "What would you like to know about this photo?") : context.length ? (ro ? "Adaugă detalii sau o întrebare…" : "Add details or ask a follow-up…") : (ro ? "Am nevoie de…" : "I need…")} className="w-full resize-none bg-transparent text-xl placeholder:text-muted focus:outline-none" />
+      <div className="my-3 flex flex-wrap items-center gap-2 text-xs">
+        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
+        <input ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
+        <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => fileInput.current?.click()} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Adaugă o poză" : "Add a photo"}</button>
+        <button type="button" disabled={pending || preparingPhoto || locating} onClick={() => cameraInput.current?.click()} className="rounded-lg border border-line px-3 py-2 text-brand disabled:opacity-50">{ro ? "Fă o poză" : "Take a photo"}</button>
+        {preparingPhoto && <span role="status">{ro ? "Pregătesc poza…" : "Preparing photo…"}</span>}
+      </div>
+      {photoError && <p role="alert" className="mb-3 text-xs text-red-800">{photoError}</p>}
+      {photo && <div className="mb-3 flex items-center gap-3 text-xs">
+        {/* eslint-disable-next-line @next/next/no-img-element -- local compressed preview, no remote image */}
+        <img src={photo} alt={ro ? "Poza atașată" : "Attached photo"} className="h-24 w-24 rounded-lg object-contain bg-tile" />
+        <p className="flex-1 text-muted">{ro ? "Poza va fi trimisă cu această întrebare și următoarele până o elimini. Nu este salvată de INeed." : "This photo is sent with this question and follow-ups until removed. INeed does not save it."}</p>
+        <button type="button" disabled={pending || preparingPhoto} onClick={removePhoto} className="text-brand underline">{ro ? "Elimină poza" : "Remove photo"}</button>
+      </div>}
       <div className="flex items-center justify-between gap-4">
         <span className="text-[11px] text-muted">{ro ? "Răspunsuri scurte. Surse când contează." : "Short answers. Sources where they matter."}</span>
-        <button disabled={pending || locating || question.trim().length < 2} type="submit" className="rounded-xl bg-brand px-5 py-2.5 text-sm text-white disabled:opacity-50">{pending ? (ro ? "Lucrez…" : "Working…") : (ro ? "Ajută-mă ↑" : "Help me ↑")}</button>
+        <button disabled={pending || preparingPhoto || locating || question.trim().length < 2} type="submit" className="rounded-xl bg-brand px-5 py-2.5 text-sm text-white disabled:opacity-50">{pending ? (ro ? "Lucrez…" : "Working…") : (ro ? "Ajută-mă ↑" : "Help me ↑")}</button>
       </div>
     </form>
-    <p className="mt-2 text-[11px] text-muted">{ro ? "Cererea și orașul sunt trimise la Claude pentru răspuns și, când e nevoie, căutare web. Nu introduce date sensibile. Nu contactăm și nu rezervăm în locul tău." : "Your request and city go to Claude for an answer and web search when needed. Leave out sensitive details. We don’t contact or book on your behalf."}</p>
+    <p className="mt-2 text-[11px] text-muted">{ro ? "Cererea, poza atașată și orașul sunt trimise la Claude pentru răspuns și, când e nevoie, căutare web. Nu introduce date sensibile. Nu contactăm și nu rezervăm în locul tău." : "Your request, attached photo and city go to Claude for an answer and web search when needed. Leave out sensitive details. We don’t contact or book on your behalf."}</p>
     <div role="status" aria-live="polite" aria-busy={pending} className="mt-6">
       {pending && <p className="text-center text-sm text-sage">{elapsed >= 10 ? (ro ? "Încă lucrez. Verificarea surselor web poate dura mai mult." : "Still working. Checking web sources can take longer.") : (ro ? "Pregătesc răspunsul…" : "Preparing your answer…")} <span aria-hidden="true">{elapsed}s</span></p>}
       {!pending && result && <article className="rounded-[22px] border border-line bg-white p-5 text-sm leading-relaxed">
@@ -93,7 +128,7 @@ export function ConciergeBox() {
     </div>
     {!context.length && !pending && <div className="mt-6 flex flex-wrap justify-center gap-2">{examples.map(example => <button key={example} onClick={() => {setQuestion(example);input.current?.focus();}} className="rounded-full border border-line px-3 py-2 text-xs text-sage hover:bg-tile">{example}</button>)}</div>}
     {!!context.length && !pending && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-      <button onClick={() => {setQuestion("");setContext([]);setResult(null);setFeedback("");input.current?.focus();}} className="text-brand underline">{ro ? "O cerere nouă" : "Start a new request"}</button>
+      <button disabled={preparingPhoto} onClick={() => {setQuestion("");removePhoto();input.current?.focus();}} className="text-brand underline">{ro ? "O cerere nouă" : "Start a new request"}</button>
       {result?.status === "answered" && <button className="text-brand underline" onClick={() => { const text = JSON.stringify({ context, city, result, feedback: "Add your feedback here / Scrie feedback aici" }, null, 2); const url = URL.createObjectURL(new Blob([text], {type:"text/plain"})); const a = document.createElement("a"); a.href=url;a.download="ineed-test-feedback.txt";a.click();URL.revokeObjectURL(url);setFeedback(ro ? "Descărcat. Adaugă observațiile și trimite organizatorului testului." : "Downloaded. Add your comments and share with the pilot organiser."); }}>{ro ? "Descarcă testul pentru feedback" : "Download this test for feedback"}</button>}
       {feedback && <p role="status" className="w-full text-muted">{feedback}</p>}
     </div>}
