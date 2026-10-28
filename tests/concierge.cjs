@@ -177,3 +177,31 @@ test('camera denial and unsupported browsers expose errors',async()=>{
 test('camera capture rejects frames before video is ready',async()=>{
   await assert.rejects(camera.captureFrame({videoWidth:0,videoHeight:0,readyState:0}),/NotReady/);
 });
+
+const prefs=load('lib/concierge/preferences.ts');
+test('account preferences accept only language and area, never account IDs or roles',()=>{
+  for(const bad of [{language:'fr'},{city:'x'.repeat(101)},{role:'admin'},{city:'Paris',userId:'other'},{}]) assert.equal(prefs.PreferencePatch.safeParse(bad).success,false);
+  const patch=prefs.PreferencePatch.parse({city:'  Paris, France  '});
+  assert.equal(patch.city,'Paris, France');
+  const meta=prefs.preferenceMetadata(patch);
+  assert.equal(meta.ineed_city,'Paris, France');assert.equal(meta.ineed_location_configured,true);
+  assert.equal('ineed_language' in meta,false);
+});
+test('clearing location stays configured and language survives account reload',()=>{
+  const meta={ineed_language:'ro',...prefs.preferenceMetadata({city:''})};
+  const result=prefs.readPreferences(meta);
+  assert.equal(result.city,'');assert.equal(result.locationConfigured,true);assert.equal(result.language,'ro');
+  assert.equal(prefs.readPreferences({ineed_language:'invalid'}).language,'en');
+});
+test('preference saves require an authenticated user and update only that account',async()=>{
+  let writes=0;let stored;let authenticated=false;let fail=false;
+  const {savePreferences}=load('app/preference-actions.ts',{
+    '@/lib/supabase/server':{createClient:async()=>({auth:{getUser:async()=>({data:{user:authenticated?{id:'signed-in'}:null},error:null}),updateUser:async args=>{writes++;stored=args;return {error:fail?{}:null};}}})},
+    '@/lib/concierge/preferences':prefs,'next/cache':{revalidatePath(){}},
+  });
+  assert.equal((await savePreferences({city:'Paris'})).ok,false);assert.equal(writes,0);
+  authenticated=true;
+  assert.equal((await savePreferences({language:'ro'})).ok,true);
+  assert.equal(stored.data.ineed_language,'ro');assert.equal(Object.keys(stored.data).length,1);
+  fail=true;assert.equal((await savePreferences({city:''})).ok,false);
+});

@@ -50,3 +50,9 @@ Nothing is uploaded until a question is submitted. The photo is sent to Claude a
 ## Camera capture
 
 Take a photo opens an in-app getUserMedia video preview (no microphone), with Capture photo and Close camera controls. It prefers the rear camera on phones and uses available webcams on desktops. Browser/OS permission is required. Cancel, capture and unmount stop all tracks, including streams granted after cancellation. Captures pass through the existing local compression and question submission flow. Denied, missing, busy and unsupported cameras show actionable errors; Add a photo remains available.
+
+## Account menu and preferences
+
+The home header now contains the brand and hamburger menu. Manuals, admin (role-gated), password, sign out, language, location and privacy live in the menu. The entire concierge shell switches between English and Romanian. Generated answers are cleared when preferences change; they are not automatically translated.
+
+Language and the selected area are stored in the signed-in user's Supabase user metadata (ineed_language, ineed_city, ineed_location_configured). These are preferences only; authorization still reads profiles.role. Authenticated server actions accept only validated language/area patches. No migration or service key is required. Choose once or continue without location; no recurring automatic location prompts. Remove saved location clears it from future requests without changing browser permissions, which the site cannot revoke. The menu explains how to revoke those through browser/device settings. Coordinates are never saved to the account.
