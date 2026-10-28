@@ -11,7 +11,7 @@ function load(file, mocks = {}, globals = {}) {
   const filename = path.join(__dirname, '..', file);
   const js = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const testModule = {exports:{}};
-  vm.runInNewContext(js, {module:testModule, exports:testModule.exports, require:name => name in mocks ? mocks[name] : require(name), URL, Date, AbortSignal, process:{env:{}}, console:{info(){}}, ...globals}, {filename});
+  vm.runInNewContext(js, {module:testModule, exports:testModule.exports, require:name => name in mocks ? mocks[name] : require(name), URL, Date, AbortSignal, AbortController, setTimeout, clearTimeout, process:{env:{}}, console:{info(){}}, ...globals}, {filename});
   return testModule.exports;
 }
 const contracts = load('lib/concierge/contracts.ts');
@@ -204,4 +204,28 @@ test('preference saves require an authenticated user and update only that accoun
   assert.equal((await savePreferences({language:'ro'})).ok,true);
   assert.equal(stored.data.ineed_language,'ro');assert.equal(Object.keys(stored.data).length,1);
   fail=true;assert.equal((await savePreferences({city:''})).ok,false);
+});
+
+
+test('a silent location prompt times out and late permission does not transmit coordinates', async()=>{
+  let timeout, success, cleared = false;
+  const {detectArea: detect}=load('lib/concierge/location.ts',{}, {setTimeout:fn=>{timeout=fn;return 1;},clearTimeout:()=>{cleared=true;}});
+  let calls=0;
+  const result=detect({getCurrentPosition(resolve){success=resolve;}},async()=>{calls++;});
+  timeout();
+  await assert.rejects(result,/timeout/);
+  success({coords:{latitude:44,longitude:26,accuracy:10}});
+  assert.equal(calls,0);assert.equal(cleared,true);
+});
+test('cancelling location leaves manual entry safe from a late GPS result', async()=>{
+  const controller=new AbortController();let success;let calls=0;
+  const result=detectArea({getCurrentPosition(resolve){success=resolve;}},async()=>{calls++;},controller.signal);
+  controller.abort();await assert.rejects(result,/cancelled/);
+  success({coords:{latitude:44,longitude:26,accuracy:10}});
+  assert.equal(calls,0);
+});
+test('location lookup works without AbortSignal.timeout',async()=>{
+  const {detectArea: detect}=load('lib/concierge/location.ts',{}, {AbortSignal:{}});
+  const result=await detect(fakeGeo({latitude:44,longitude:26,accuracy:10}),async()=>({ok:true,json:async()=>({city:'Bucharest',countryName:'Romania'})}));
+  assert.equal(result,'Bucharest, Romania');
 });
