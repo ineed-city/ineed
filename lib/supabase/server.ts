@@ -1,9 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 
 // Client Supabase pentru server (Server Components, Server Actions, Route Handlers).
 // Creează unul nou la fiecare cerere: nu-l păstra într-o variabilă globală.
 export async function createClient() {
+  // Supabase initializes session timers; keep them out of speculative prerenders.
+  await connection();
   const cookieStore = await cookies();
 
   return createServerClient(
