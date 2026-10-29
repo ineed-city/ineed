@@ -51,6 +51,14 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   },[unsaved,saving]);
   const [result, setResult] = useState<ConciergeResult | null>(null);
   const [pending, setPending] = useState(false);
+  const requestInFlight = useRef(false);
+  const scrollAction = useRef(false);
+  const answerRegion = useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!scrollAction.current) return;
+    answerRegion.current?.scrollIntoView({block:'start',behavior:'smooth'});
+    if(!pending) scrollAction.current = false;
+  },[pending,result]);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!pending) return;
@@ -81,9 +89,9 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
 
   function runAction(action:NextAction,title:string,sourceQuestion:string) {
     if(action.type==='followup') {
-      if(question.trim() && !window.confirm(ro?'Înlocuiești întrebarea netrimisă?':'Replace the unsent question?')) return;
-      setQuestion(`${action.prompt}\n${ro?'Referitor la':'Regarding'}: ${title}. ${sourceQuestion}`.slice(0,2000));
-      input.current?.focus();input.current?.scrollIntoView({block:'center',behavior:'smooth'});
+      if(pending || saving || unsaved || preparingPhoto || turns.length>=MAX_CHAT_TURNS || requestInFlight.current) return;
+      scrollAction.current = true;
+      void sendQuestion(`${action.prompt}\n${ro?'Referitor la':'Regarding'}: ${title}. ${sourceQuestion}`.slice(0,2000), true);
     } else setActiveAction({action,title});
   }
   function removePhoto() {
@@ -130,24 +138,28 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (pending || saving || unsaved || preparingPhoto || turns.length>=MAX_CHAT_TURNS || question.trim().length < 2) return;
+    await sendQuestion(question);
+  }
+  async function sendQuestion(text:string, fromAction=false) {
+    const asked=text.trim();
+    if (requestInFlight.current || pending || saving || unsaved || preparingPhoto || turns.length>=MAX_CHAT_TURNS || asked.length < 2) return;
+    requestInFlight.current = true;
     setElapsed(0); setPending(true);
-    const asked=question.trim();
     try {
       const requestCity = liveLocation.enabled ? await liveLocation.refresh() : city;
       const id=chatId||crypto.randomUUID();
-      const response = await askSavedConcierge({ question: asked, city: requestCity, language, context, ...(shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
+      const response = await askSavedConcierge({ question: asked, city: requestCity, language, context, ...(!fromAction && shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(!fromAction && photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
       const {answer}=response;
       setResult(answer); setAnsweredQuestion(asked);
       if (response.turn && response.saved) {
         const turn:SavedTurn=response.turn;
-        setChatId(id);setTurns(previous=>[...previous,turn]);setQuestion("");
+        setChatId(id);setTurns(previous=>[...previous,turn]);if(!fromAction) setQuestion("");
         if(response.saved.ok){setChatVersion(response.saved.version);setUnsaved(null);setSaveIssue("");}
         else {setUnsaved(turn);setSaveIssue(response.saved.conflict?"conflict":"failed");}
       }
     } catch {
       setResult({ status: "error", segments: [], message: ro ? "Conexiunea s-a întrerupt. Încearcă din nou." : "Connection interrupted. Please try again." });
-    } finally { setPending(false); }
+    } finally { requestInFlight.current = false; setPending(false); }
   }
 
   return <div lang={language} className="concierge-shell">
@@ -170,7 +182,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
 
     {!!turns.length && <div className="mb-4 flex items-center justify-between gap-3 text-xs"><span className="text-muted">{ro ? "Conversație" : "Conversation"} · {turns[0].question.slice(0,65)}</span><button type="button" disabled={pending||saving} onClick={startNew} className="text-brand underline">{ro ? "Conversație nouă" : "New chat"}</button></div>}
-    <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro} disabled={pending||saving||preparingPhoto} onAction={runAction}/>
+    <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={runAction}/>
     {turns.some(turn=>turn.hadPhoto)&&!photo&&<p className="mb-4 text-xs text-muted">{ro ? "Pozele anterioare nu sunt salvate. Atașează din nou poza dacă întrebarea depinde de ea." : "Earlier photos are not saved. Reattach the photo if your follow-up depends on it."}</p>}
     <form onSubmit={submit} className="need-composer">
       <label htmlFor="need" className="sr-only">{ro ? "De ce ai nevoie?" : "What do you need?"}</label>
@@ -203,7 +215,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     <p className="composer-privacy">{ro ? "Textul conversației și linkurile sunt salvate în Istoric. Pozele nu sunt salvate. Cererile sunt procesate de Claude." : "Chat text and links are saved to History. Photos are not saved. Requests are processed by Claude."}</p>
     {saveIssue && <div role="alert" className="my-4 text-sm text-red-800"><p>{saveIssue === "conflict" ? (ro ? "Conversația a fost modificată în altă filă. Acest răspuns nu a fost salvat. Copiază-l înainte să redeschizi conversația din Istoric." : "This chat changed in another tab. This answer was not saved. Copy it before reopening the conversation from History.") : (ro ? "Răspunsul nu a fost salvat în Istoric. Reîncearcă înainte să închizi pagina." : "This answer wasn’t saved to History. Retry before closing the page.")}</p>{saveIssue === "failed" && <button type="button" disabled={saving} onClick={()=>{if(chatId&&unsaved) void persist(chatId,chatVersion,unsaved);}} className="mt-2 underline">{saving ? (ro?"Se salvează…":"Saving…") : (ro?"Reîncearcă salvarea":"Retry saving")}</button>}</div>}
     {turns.length>=MAX_CHAT_TURNS&&<p className="my-4 text-sm">{ro ? "Această conversație a ajuns la 30 de răspunsuri. Începe una nouă pentru a continua." : "This conversation has reached 30 replies. Start a new chat to continue."}</p>}
-    <div role="status" aria-live="polite" aria-busy={pending} className={pending || result ? "answer-region" : ""}>
+    <div ref={answerRegion} role="status" aria-live="polite" aria-busy={pending} className={pending || result ? "answer-region" : ""}>
       {pending && <p className="answer-loading">{elapsed >= 10 ? (ro ? "Încă lucrez. Verificarea surselor web poate dura mai mult." : "Still working. Checking web sources can take longer.") : (ro ? "Pregătesc răspunsul…" : "Preparing your answer…")} <span aria-hidden="true">{elapsed}s</span></p>}
       {!pending && result && <article className="answer-card">
         <p className="chat-question mb-4 whitespace-pre-wrap break-words">{answeredQuestion}</p>
@@ -211,7 +223,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
         {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
         {result.status === "answered" && result.searched && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly."}</p>}
-        {result.status==='answered'&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
+        {result.status==='answered'&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
         {result.plan && <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">{ro ? "Cum a înțeles INeed" : "How INeed understood this"}</summary><p className="mt-2">{result.plan.goal}</p><p>{ro ? "Acesta este un rezumat al cererii, nu raționamentul intern al AI." : "This is a task brief, not the AI’s internal reasoning."}</p></details>}
         {result.status === "answered" && result.answerId && <button type="button" onClick={()=>setFeedbackOpen(true)} className="mt-4 text-xs text-brand underline">{ro ? "Lasă feedback" : "Leave feedback"}</button>}
       </article>}
