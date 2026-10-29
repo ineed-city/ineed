@@ -5,7 +5,10 @@ import type { ConciergeRequest, ConciergeResult, Plan } from './contracts';
 import type { NextAction } from './next-steps';
 
 const Point = z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)});
+const Review = z.object({text:z.object({text:z.string()}),authorAttribution:z.object({displayName:z.string(),uri:z.string().optional(),photoUri:z.string().optional()}),googleMapsUri:z.string(),relativePublishTimeDescription:z.string().optional(),visitDate:z.object({year:z.number(),month:z.number()}).optional()});
 const Place = z.object({
+  editorialSummary:z.object({text:z.string()}).optional(), reviews:z.array(Review).optional(),
+  outdoorSeating:z.boolean().optional(), goodForChildren:z.boolean().optional(), priceLevel:z.string().optional(),
   rating:z.number().min(0).max(5).optional(), userRatingCount:z.number().int().min(0).optional(),
   primaryTypeDisplayName:z.object({text:z.string()}).optional(),
   currentOpeningHours:z.object({openNow:z.boolean().optional()}).optional(),
@@ -40,6 +43,11 @@ export function parsePlaces(raw:unknown):z.infer<typeof Place>[] {
       internationalPhoneNumber:typeof record.internationalPhoneNumber==='string'?record.internationalPhoneNumber:undefined,
       googleMapsUri:typeof record.googleMapsUri==='string'?record.googleMapsUri:undefined,
       businessStatus:typeof record.businessStatus==='string'?record.businessStatus:undefined,
+      editorialSummary:typeof (record.editorialSummary as {text?:unknown})?.text==='string'?record.editorialSummary:undefined,
+      reviews:Array.isArray(record.reviews)?record.reviews.flatMap(r=>{const parsed=Review.safeParse(r);return parsed.success?[parsed.data]:[];}):[],
+      priceLevel:typeof record.priceLevel==='string'?record.priceLevel:undefined,
+      outdoorSeating:typeof record.outdoorSeating==='boolean'?record.outdoorSeating:undefined,
+      goodForChildren:typeof record.goodForChildren==='boolean'?record.goodForChildren:undefined,
       rating:typeof record.rating==='number' && record.rating>=0 && record.rating<=5?record.rating:undefined,
       userRatingCount:typeof record.userRatingCount==='number' && Number.isInteger(record.userRatingCount) && record.userRatingCount>=0?record.userRatingCount:undefined,
       primaryTypeDisplayName:typeof (record.primaryTypeDisplayName as {text?:unknown})?.text==='string'?record.primaryTypeDisplayName:undefined,
@@ -78,7 +86,9 @@ function placeDetails(p:z.infer<typeof Place>,ro:boolean,origin?:{latitude:numbe
   if(cuisine) facts.push(cuisines[cuisine][ro?0:1]);
   if(p.rating!==undefined) facts.push(`${p.rating.toFixed(1)} / 5 Google${p.userRatingCount!==undefined?` · ${p.userRatingCount} ${ro?'recenzii':'reviews'}`:''}`);
   if(p.currentOpeningHours?.openNow!==undefined) facts.push(p.currentOpeningHours.openNow?(ro?'Deschis acum':'Open now'):(ro?'Închis acum':'Closed now'));
-  const features=[p.servesVegetarianFood===true?(ro?'Opțiuni vegetariene':'Vegetarian options'):'',p.dineIn===true?(ro?'Servire la masă':'Dine-in'):'',p.takeout===true?(ro?'La pachet':'Takeaway'):''].filter(Boolean);
+  const features=[p.outdoorSeating===true?(ro?'Terasă / locuri în aer liber':'Outdoor seating'):'',p.goodForChildren===true?(ro?'Potrivit pentru copii':'Child-friendly'):'',p.servesVegetarianFood===true?(ro?'Opțiuni vegetariene':'Vegetarian options'):'',p.dineIn===true?(ro?'Servire la masă':'Dine-in'):'',p.takeout===true?(ro?'La pachet':'Takeaway'):''].filter(Boolean);
+  const price:Record<string,string>={PRICE_LEVEL_INEXPENSIVE:'€',PRICE_LEVEL_MODERATE:'€€',PRICE_LEVEL_EXPENSIVE:'€€€',PRICE_LEVEL_VERY_EXPENSIVE:'€€€€'};
+  if(p.priceLevel && price[p.priceLevel]) facts.push(`${ro?'Nivel de preț':'Price level'}: ${price[p.priceLevel]}`);
   if(features.length) facts.push(features.join(' · '));
   if(origin) {const d=distanceMeters(origin,p.location);facts.push(`${ro?'La aproximativ':'Approximately'} ${d<1000?`${Math.round(d/50)*50} m`:`${(d/1000).toFixed(1)} km`} ${ro?'în linie dreaptă':'in a straight line'}`);}
   return facts;
@@ -95,14 +105,14 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
   const ro=input.language==='ro';
   const signal=AbortSignal.timeout(15_000);
   async function lookup(method:'searchText'|'searchNearby',body:Record<string,unknown>,phone=false) {
-    const response=await fetcher(`https://places.googleapis.com/v1/places:${method}`,{method:'POST',cache:'no-store',signal,headers:{'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':fields+(phone?',places.internationalPhoneNumber,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.currentOpeningHours,places.servesVegetarianFood,places.dineIn,places.takeout':'')},body:JSON.stringify({...body,languageCode:input.language})});
+    const response=await fetcher(`https://places.googleapis.com/v1/places:${method}`,{method:'POST',cache:'no-store',signal,headers:{'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':fields+(phone?',places.internationalPhoneNumber,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.currentOpeningHours,places.servesVegetarianFood,places.dineIn,places.takeout,places.editorialSummary,places.reviews,places.outdoorSeating,places.goodForChildren,places.priceLevel':'')},body:JSON.stringify({...body,languageCode:input.language})});
     if(!response.ok) throw new Error(`Maps HTTP ${response.status}`);
     return parsePlaces(await response.json());
   }
   try {
     const origin=plan.destination?.source==='question'||plan.destination?.source==='context'?undefined:freshDeviceLocation(input.deviceLocation);
     const businessName=search.businessName?.trim();
-    const query=businessName || search.query;
+    const query=businessName ? `${businessName} ${search.placeType.replace(/_/g,' ')}` : search.query;
     let anchor:z.infer<typeof Place>|undefined;
     let places:z.infer<typeof Place>[];
     if(search.landmark && !businessName) {
@@ -126,7 +136,10 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
         places=places.filter(p=>sameCity(p,input.city));
       }
     }
-    if(businessName) places=places.filter(p=>nameMatches(businessName,p.displayName.text));
+    if(businessName) places=places.filter(p=>{
+      const words=normalize(businessName).split(' ').filter(w=>!['restaurant','restaurantul','pub','cafe','cafenea','salon','salonul'].includes(w));
+      return words.length>0 && words.every(w=>normalize(p.displayName.text).split(' ').includes(w));
+    });
     if(businessName && !places.length) return null; // Let sourced web research check the named venue.
     places=places.filter(p=>search.placeType!=='pharmacy' || !/\b(fito farmacie|fitofarmacie|fitosanitara|farmacie veterinara|veterinary pharmacy)\b/.test(normalize(p.displayName.text)));
     places=places.filter(p=>p.businessStatus!=='CLOSED_PERMANENTLY'&&p.businessStatus!=='CLOSED_TEMPORARILY');
@@ -140,7 +153,19 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
     for(const p of places) segments.push({text:`${p.displayName.text}\n${p.formattedAddress}\n${placeDetails(p,ro,anchor?.location||origin).join("\n")}\n\n`,sources:[{title:'Google Maps',url:mapUrl(p)}]});
     const attributions=[...(anchor?[anchor]:[]),...places].flatMap(p=>p.attributions||[]);
     segments.push({text:ro?'Date: Google Maps. Confirmă programul și disponibilitatea direct.':'Data: Google Maps. Confirm hours and availability directly.',sources:attributions.flatMap(a=>a.providerUri?.startsWith('https://')?[{title:a.provider,url:a.providerUri}]:[])});
-    return {status:'answered',plan,segments,mapData:true,searched:false,nextSteps:places.map(p=>{
+    const placeNotes:NonNullable<ConciergeResult['placeNotes']>={};
+    for(const p of places) {
+      // Preserve Google's editorial text; review excerpts remain attributed
+      // opinions, never rewritten as an objective description of the business.
+      const review=p.reviews?.find(r=>r.text.text.trim() && r.googleMapsUri.startsWith('https://'));
+      const sentences=review?.text.text.split(/(?<=[.!?])\s+/) || [];
+      const relevant=sentences.find(t=>/pizza|paste|pasta|burger|pește|fish|ciorb|soup|mâncar|food|bucăt|cuisine|atmos|teras|terrace|view|privel/i.test(t)) || sentences[0];
+      const words=relevant?.split(/\s+/) || [];
+      placeNotes[mapUrl(p)]={description:p.editorialSummary?.text,
+        ...(review && relevant?{review:{text:words.slice(0,24).join(' ')+(words.length>24?'…':''),author:review.authorAttribution.displayName,authorUrl:review.authorAttribution.uri,avatar:review.authorAttribution.photoUri,url:review.googleMapsUri,date:review.relativePublishTimeDescription,visit:review.visitDate?`${review.visitDate.month}/${review.visitDate.year}`:undefined}}:{}),
+      };
+    }
+    return {status:'answered',plan,segments,placeNotes,mapData:true,searched:false,nextSteps:places.map(p=>{
       const actions:NextAction[]=[{type:'website',label:ro?'Deschide harta':'Open map',url:mapUrl(p)}];
       const phone=p.internationalPhoneNumber?.replace(/[\s().-]/g,'');
       if(phone && /^\+[1-9]\d{6,14}$/.test(phone)) actions.push({type:'call',label:ro?'Sună':'Call',phone,sourceUrl:mapUrl(p)});

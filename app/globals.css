@@ -170,3 +170,10 @@ button:disabled { cursor: default; }
 }
 
 .place-detail { margin: .35rem 0; font-size: .85rem; line-height: 1.5; color: var(--foreground, #263b33); }
+
+.place-description { margin: .6rem 0; font-size: .9rem; line-height: 1.6; }
+.place-review { margin: .85rem 0; padding-left: .8rem; border-left: 2px solid #cadbd3; font-size: .85rem; line-height: 1.5; }
+.place-review p { margin: 0 0 .4rem; }
+.place-review footer { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; color: #66716c; font-size: .75rem; }
+.place-review img { border-radius: 50%; }
+.place-review > a { font-size: .7rem; color: #516b60; text-decoration: underline; }

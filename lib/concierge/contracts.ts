@@ -47,6 +47,7 @@ export type ConciergeRequest = z.infer<typeof RequestSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type Segment = { text: string; sources: { title: string; url: string }[] };
 export type ConciergeResult = {
+  placeNotes?: Record<string, {description?:string;review?:{text:string;author:string;authorUrl?:string;avatar?:string;url:string;date?:string;visit?:string}} >;
   mapData?: boolean;
   nextSteps?: NextSteps;
   answerId?: string;

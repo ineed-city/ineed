@@ -650,8 +650,8 @@ test('fresh GPS returns five closest listings with sourced facts and excludes di
 });
 test('named venue searches preserve name and omit category filter',async()=>{
  let body;
- const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{businessName:'La Strada',landmark:null,landmarkType:null,placeType:'restaurant',query:'restaurant'}},async(url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({places:[{...pharmacy,displayName:{text:'Restaurant La Strada'},rating:4.5,userRatingCount:650},pharmacy]})};});
- assert.equal(body.textQuery,'La Strada, Campia Turzii');assert.equal(body.includedType,undefined);
+ const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{businessName:'La Strada',landmark:null,landmarkType:null,placeType:'restaurant',query:'restaurant'}},async(url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({places:[{...pharmacy,displayName:{text:'Restaurant La Strada'},rating:4.5,userRatingCount:650},{...pharmacy,displayName:{text:'La Broscuta'}},pharmacy]})};});
+ assert.equal(body.textQuery,'La Strada restaurant, Campia Turzii');assert.equal(body.includedType,undefined);
  assert.equal(result.nextSteps.length,1);assert.equal(result.nextSteps[0].title,'Restaurant La Strada');
 });
 test('empty named venue lookup hands off to web instead of claiming no venue',async()=>{
@@ -688,4 +688,18 @@ test('GPS coordinates are returned only after successful area detection',async()
  received=undefined;
  await assert.rejects(detectArea(fakeGeo({latitude:44,longitude:26,accuracy:50}),async()=>({ok:false}),undefined,p=>{received=p;}));
  assert.equal(received,undefined);
+});
+
+test('place descriptions and attributed review excerpts are transient and keep source links',async()=>{
+ const listing={...pharmacy,editorialSummary:{text:'A small riverside restaurant serving pizza.'},outdoorSeating:true,priceLevel:'PRICE_LEVEL_MODERATE',reviews:[{text:{text:'Friendly welcome. The pizza and the river view were wonderful.'},authorAttribution:{displayName:'Test reviewer',uri:'https://www.google.com/maps/contrib/test',photoUri:'https://example.com/avatar.png'},googleMapsUri:'https://www.google.com/maps/reviews/test',relativePublishTimeDescription:'a month ago'}]};
+ const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'restaurant',query:'restaurant'}},async()=>({ok:true,json:async()=>({places:[listing]})}));
+ const note=Object.values(result.placeNotes)[0];
+ assert.equal(note.description,listing.editorialSummary.text);assert.equal(note.review.author,'Test reviewer');
+ assert.match(note.review.text,/pizza/);assert.equal(note.review.url,listing.reviews[0].googleMapsUri);
+ const stored=JSON.stringify(historyRules.SavedTurnSchema.parse({id:'11111111-1111-4111-8111-111111111111',question:request.question,city:'Campia Turzii',language:'en',hadPhoto:false,result}));
+ assert.ok(!stored.includes('Test reviewer'));assert.ok(!stored.includes('riverside'));
+});
+test('missing or malformed review details do not remove a valid business',()=>{
+ const rows=maps.parsePlaces({places:[{...pharmacy,editorialSummary:null,reviews:[{}, {text:{text:'No author'}}],outdoorSeating:null}]});
+ assert.equal(rows.length,1);assert.equal(rows[0].reviews.length,0);assert.equal(rows[0].editorialSummary,undefined);
 });
