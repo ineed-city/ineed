@@ -8,6 +8,7 @@ import { chatContext, MAX_CHAT_TURNS, type SavedTurn, type SavedChat } from "@/l
 import { FeedbackDialog } from "./answer-feedback";
 import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
+import { useLiveLocation } from "./use-live-location";
 import { SettingsMenu } from "./settings-menu";
 import { savePreferences } from "./preference-actions";
 import { Icon } from "./ui/icons";
@@ -15,6 +16,7 @@ import { Brand, ConciergeMark } from "./ui/brand";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
 
 export function ConciergeBox({ initial, email, isAdmin }: { initial: { language: "en" | "ro"; city: string; locationConfigured: boolean; firstName: string }; email: string; isAdmin: boolean }) {
+  const liveLocation = useLiveLocation(email);
   const [language, setLanguage] = useState(initial.language);
   const [firstName, setFirstName] = useState(initial.firstName);
   const [city, setCity] = useState(initial.city);
@@ -64,7 +66,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   async function updatePreferences(patch: { firstName?: string; city?: string; language?: "en" | "ro" }) {
     const saved = await savePreferences(patch).catch(() => ({ok:false}));
     if (!saved.ok) return false;
-    if (patch.city !== undefined) {setCity(patch.city); setLocationConfigured(true);}
+    if (patch.city !== undefined) {liveLocation.disable(); setCity(patch.city); setLocationConfigured(true);}
     if (patch.firstName !== undefined) setFirstName(patch.firstName);
     if (patch.language !== undefined) setLanguage(patch.language);
      setPhotoError("");
@@ -119,8 +121,9 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     setElapsed(0); setPending(true);
     const asked=question.trim();
     try {
+      const requestCity = liveLocation.enabled ? await liveLocation.refresh() : city;
       const id=chatId||crypto.randomUUID();
-      const response = await askSavedConcierge({ question: asked, city, language, context, ...(shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
+      const response = await askSavedConcierge({ question: asked, city: requestCity, language, context, ...(shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
       const {answer}=response;
       setResult(answer); setAnsweredQuestion(asked);
       if (response.turn && response.saved) {
@@ -139,7 +142,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       <Brand />
       <button type="button" aria-label={ro ? "Deschide meniul" : "Open menu"} aria-expanded={menuOpen} aria-controls="settings-menu" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="icon-button menu-button"><Icon name="menu" /></button>
     </header>
-    {menuOpen && <SettingsMenu firstName={firstName} language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onHistory={()=>{setMenuOpen(false);setHistoryOpen(true);}} onNewChat={startNew} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
+    {menuOpen && <SettingsMenu liveLocation={liveLocation} firstName={firstName} language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onHistory={()=>{setMenuOpen(false);setHistoryOpen(true);}} onNewChat={startNew} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
     {historyOpen && <HistoryDialog ro={ro} onClose={()=>setHistoryOpen(false)} onOpen={openConversation} onNew={startNew} />}
     {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
     <main className={`concierge-main ${result || pending ? "has-answer" : ""}`}>
@@ -149,7 +152,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       <p className="concierge-subtitle">{ro ? "Spune-ne ce cauți. Găsim următorul pas." : "Tell us what you need. Find your next step."}</p></div>
       <section className="concierge-workspace">
     {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
-    {(!locationConfigured || city) && <button type="button" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="location-chip"><Icon name="pin" /><span>{city || (ro ? "Alege zona ta" : "Set your area")}</span><Icon name="chevron" /></button>}
+    {(liveLocation.enabled || !locationConfigured || city) && <button type="button" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="location-chip"><Icon name="pin" /><span>{liveLocation.enabled ? (liveLocation.status === "checking" ? (ro ? "Actualizez zona…" : "Updating area…") : liveLocation.area ? `${liveLocation.area} · ${ro ? "automat" : "automatic"}` : (ro ? "Locație indisponibilă · verifică setările" : "Location unavailable · check settings")) : city || (ro ? "Alege zona ta" : "Set your area")}</span><Icon name="chevron" /></button>}
     {!!turns.length && <div className="mb-4 flex items-center justify-between gap-3 text-xs"><span className="text-muted">{ro ? "Conversație" : "Conversation"} · {turns[0].question.slice(0,65)}</span><button type="button" disabled={pending||saving} onClick={startNew} className="text-brand underline">{ro ? "Conversație nouă" : "New chat"}</button></div>}
     <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro}/>
     {turns.some(turn=>turn.hadPhoto)&&!photo&&<p className="mb-4 text-xs text-muted">{ro ? "Pozele anterioare nu sunt salvate. Atașează din nou poza dacă întrebarea depinde de ea." : "Earlier photos are not saved. Reattach the photo if your follow-up depends on it."}</p>}
