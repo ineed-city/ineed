@@ -610,3 +610,26 @@ test('ordinary pharmacy lookup excludes explicitly agricultural pharmacy listing
  const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Unsupported suggestion'}]}],plan,{mapResult:{status:'error',segments:[]}});
  assert.equal((await s.answerNeed(request)).status,'error');
  });
+
+
+test('hairdresser plans support the actual Places category',()=>{
+  const parsed=contracts.PlanSchema.parse({...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'hair_salon',query:'coafor'}});
+  assert.equal(parsed.mapSearch.placeType,'hair_salon');
+});
+test('empty strict salon search retries by service text and keeps the city boundary',async()=>{
+  const calls=[];
+  const salon={...pharmacy,id:'salon-1',displayName:{text:'Test salon'},types:['beauty_salon']};
+  const otherCity={...salon,id:'other',addressComponents:[{longText:'Orsova',types:['locality']}]};
+  const closed={...salon,id:'closed',businessStatus:'CLOSED_PERMANENTLY'};
+  const fetcher=async(url,options)=>{calls.push(JSON.parse(options.body));return {ok:true,json:async()=>({places:calls.length===1?[]:[otherCity,closed,salon]})};};
+  const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'hair_salon',query:'coafor'}},fetcher);
+  assert.equal(calls.length,2);assert.equal(calls[0].includedType,'hair_salon');
+  assert.equal(calls[1].includedType,undefined);assert.equal(calls[1].textQuery,'coafor, Campia Turzii');
+  assert.equal(result.nextSteps.length,1);assert.equal(result.nextSteps[0].title,'Test salon');
+  assert.match(result.nextSteps[0].actions[0].url,/salon-1/);
+});
+test('successful salon search does not issue an extra lookup',async()=>{
+  let calls=0;
+  const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'hair_salon',query:'coafor'}},async()=>{calls++;return {ok:true,json:async()=>({places:[{...pharmacy,types:['hair_salon']}]})};});
+  assert.equal(calls,1);assert.equal(result.nextSteps.length,1);
+});
