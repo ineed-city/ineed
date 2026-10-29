@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+import { FirstName } from "@/lib/concierge/preferences";
+
 export type SignUpState = { status: "idle" | "error"; message?: string };
 
 const MIN_LENGTH = 8;
@@ -23,6 +25,8 @@ export async function signUp(
   _prev: SignUpState,
   formData: FormData,
 ): Promise<SignUpState> {
+  const firstName = FirstName.safeParse(formData.get("firstName") ?? "");
+  if (!firstName.success) return {status:"error",message:"Verifică prenumele: cel mult 50 de caractere, doar litere, spații, apostrof sau cratimă."};
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
@@ -58,6 +62,7 @@ export async function signUp(
     email,
     password,
     email_confirm: true,
+    user_metadata: { ineed_first_name: firstName.data },
   });
 
   if (error) {

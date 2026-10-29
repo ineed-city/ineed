@@ -25,6 +25,9 @@ export function SignUpForm() {
         autoComplete="off"
         className={inputClass}
       />
+      <label htmlFor="firstName" className="text-sm font-medium">Prenume (opțional)</label>
+      <input id="firstName" name="firstName" autoComplete="given-name" maxLength={50} className={inputClass} />
+      <p className="text-xs text-muted">Pentru răspunsuri mai personale, prenumele ajunge la Claude. Îl poți modifica sau elimina din Meniu → Contul meu.</p>
       <label htmlFor="email" className="text-sm font-medium">
         Adresa de email
       </label>
