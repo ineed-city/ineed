@@ -22,7 +22,7 @@ const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarific
 function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './maps':{mapAnswer:async()=>null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -587,3 +587,26 @@ test('ordinary pharmacy lookup excludes explicitly agricultural pharmacy listing
  assert.equal(result.nextSteps.length,1);
  assert.equal(result.nextSteps[0].title,'Test pharmacy');
 });
+
+ test('Google optional fields and malformed rows do not reject valid listings',()=>{
+ const partial={...pharmacy,addressComponents:[{shortText:'Câmpia Turzii',types:['locality']},{types:['political']}],internationalPhoneNumber:null,attributions:[{}, {provider:'Provider'}]};
+ const parsed=maps.parsePlaces({places:[{id:'incomplete'},partial,pharmacy]});
+ assert.equal(parsed.length,2);assert.equal(parsed[0].addressComponents[0].longText,'Câmpia Turzii');
+ assert.equal(parsed[0].internationalPhoneNumber,undefined);
+ assert.equal(parsed[0].attributions.length,1);
+ });
+ test('map response envelope failures stay distinct from an empty result',()=>{
+ assert.equal(maps.parsePlaces({}).length,0);
+ assert.throws(()=>maps.parsePlaces({places:'invalid'}));
+ assert.throws(()=>maps.parsePlaces({places:[{id:'missing-fields'}]}),/invalid listings/);
+ });
+ test('map failure falls back to cited web search without claiming geographic ranking',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}],plan,{mapResult:{status:'error',segments:[],message:'Map unavailable'}});
+ const result=await s.answerNeed(request);
+ assert.equal(result.status,'answered');assert.match(result.message,/checked web sources/);
+ assert.match(s.calls[0].system,/Do not claim a map was checked/);
+ });
+ test('map fallback still withholds an answer without sources',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Unsupported suggestion'}]}],plan,{mapResult:{status:'error',segments:[]}});
+ assert.equal((await s.answerNeed(request)).status,'error');
+ });
