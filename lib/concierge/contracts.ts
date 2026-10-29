@@ -20,6 +20,12 @@ export const PlanSchema = z.object({
   category: z.enum(["local", "recipe", "howto", "research", "general"]),
   needsWeb: z.boolean(),
   clarification: z.string().nullable(),
+  // Literal location text, not a model-invented address or normalized alias.
+  destination: z.object({
+    city: z.string().max(100),
+    source: z.enum(["question", "context", "profile"]),
+    clarificationReason: z.enum(["none", "confirm_city", "ambiguous_place", "missing_detail"]),
+  }).optional(),
 });
 export type ConciergeRequest = z.infer<typeof RequestSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
@@ -49,7 +55,7 @@ export function safeSourceUrl(value: string): string | null {
 export function quickPlan(input: ConciergeRequest): Plan | null {
   if (input.shared || input.photo || input.context.length || input.question.length > 240) return null;
   const q = input.question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (input.city.trim() && /\b(plumber|handyman|restaurant|restaurants|cafe|cafes|electrician|instalator|restaurante|cafenea)\b/.test(q)) {
+  if (input.city.trim() && !/\b(in|din|la|near|around|langa|zona)\b/.test(q) && /\b(plumber|handyman|restaurant|restaurants|cafe|cafes|electrician|instalator|restaurante|cafenea)\b/.test(q)) {
     return { goal: input.question, category: "local", needsWeb: true, clarification: null };
   }
   // Restrict the no-search shortcut to ordinary ingredient-only requests.
@@ -58,4 +64,19 @@ export function quickPlan(input: ConciergeRequest): Plan | null {
     return { goal: input.question, category: "recipe", needsWeb: false, clarification: null };
   }
   return null;
+}
+
+// Only accept an explicit override if its literal text occurs in user-authored
+// input. The model cannot use a previous assistant guess as destination evidence.
+export function resolveDestination(input: ConciergeRequest, plan: Plan): ConciergeRequest {
+  const destination = plan.destination;
+  if (!destination || destination.source === 'profile' || !destination.city.trim()) return input;
+  const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const city = normalize(destination.city);
+  const userText = destination.source === 'question' ? input.question : input.context.map(turn => turn.match(/^User: ([\s\S]*?)\nArea at the time:/)?.[1] || '').join(' ');
+  if (!city || !(` ${normalize(userText)} `).includes(` ${city} `)) return input;
+  // A different saved city is never a reason to ask permission to search.
+  // Preserve genuine ambiguity and missing task details.
+  if (destination.clarificationReason === 'confirm_city') plan.clarification = null;
+  return { ...input, city: destination.city };
 }

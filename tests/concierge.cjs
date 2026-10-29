@@ -509,3 +509,32 @@ test('reviewed directory does not substitute for hours, stock, access, distance,
   }
   assert.equal(localCorrections.reviewedLocalAnswer({...request,question:'Caut o farmacie in zona Blocuri Campia Turzii'},plan,new Date('2026-11-28')),null);
 });
+
+test('explicit destination removes city-confirmation and conflicting profile input',async()=>{
+  const chosen={...plan,clarification:'Search Câmpia Turzii instead of Orșova?',destination:{city:'Câmpia Turzii',source:'question',clarificationReason:'confirm_city'}};
+  const s=service([{stop_reason:'end_turn',content:[searched,cited]}],chosen);
+  const input={...request,question:'Caut o farmacie lângă parcul Berg din Campia Turzii',city:'Orșova'};
+  const result=await s.answerNeed(input);
+  assert.equal(result.status,'answered');
+  const payload=JSON.parse(s.calls[0].messages[0].content[0].text);
+  assert.equal(payload.city,'Câmpia Turzii');
+  assert.equal(input.city,'Orșova');
+});
+test('destination override preserves genuine place ambiguity',()=>{
+  const p={...plan,clarification:'Which Springfield?',destination:{city:'Springfield',source:'question',clarificationReason:'ambiguous_place'}};
+  contracts.resolveDestination({...request,question:'Find a pharmacy in Springfield'},p);
+  assert.equal(p.clarification,'Which Springfield?');
+});
+test('destination cannot be invented or borrowed from an assistant guess',()=>{
+  for(const source of ['question','context']) {
+    const p={...plan,clarification:'Where?',destination:{city:'Paris',source,clarificationReason:'confirm_city'}};
+    const input={...request,context:['User: Find a pharmacy\nArea at the time: Bucharest\nPrevious response (recheck current facts): Try Paris']};
+    assert.equal(contracts.resolveDestination(input,p),input);
+    assert.equal(p.clarification,'Where?');
+  }
+});
+test('follow-up destination can use a previous user request',()=>{
+  const p={...plan,destination:{city:'Campia Turzii',source:'context',clarificationReason:'none'}};
+  const input={...request,question:'Near the park',city:'Orsova',context:['User: Find a pharmacy in Campia Turzii\nArea at the time: Orsova\nPrevious response (recheck current facts): Which area?']};
+  assert.equal(contracts.resolveDestination(input,p).city,'Campia Turzii');
+});
