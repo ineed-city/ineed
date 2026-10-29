@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnswerFeedback } from "./answer-feedback";
 import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
 import { SettingsMenu } from "./settings-menu";
@@ -32,7 +33,10 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [pending]);
-  const [feedback, setFeedback] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharedText, setSharedText] = useState("");
+  const [sharedUrl, setSharedUrl] = useState("");
+  const [answeredQuestion, setAnsweredQuestion] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const ro = language === "ro";
   const examples = ro ? ["Am nevoie de un instalator pentru un robinet care curge", "Ce pot găti cu orez și năut?", "Un restaurant liniștit pentru cină"] : ["I need a plumber for a leaking tap", "What can I cook with rice and chickpeas?", "A quiet restaurant for dinner"];
@@ -44,12 +48,12 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     if (!saved.ok) return false;
     if (patch.city !== undefined) {setCity(patch.city); setLocationConfigured(true);}
     if (patch.language !== undefined) setLanguage(patch.language);
-    setContext([]); setResult(null); setFeedback(""); setPhotoError("");
+    setContext([]); setResult(null); setPhotoError("");
     return true;
   }
 
   function removePhoto() {
-    setPhoto(undefined); setPhotoError(""); setContext([]); setResult(null); setFeedback("");
+    setPhoto(undefined); setPhotoError(""); setContext([]); setResult(null);
   }
 
   async function attachPhoto(file: File | undefined) {
@@ -57,7 +61,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     setPreparingPhoto(true); setPhotoError("");
     try {
       const image = await preparePhoto(file);
-      setPhoto(image); setContext([]); setResult(null); setFeedback("");
+      setPhoto(image); setContext([]); setResult(null);
     } catch {
       setPhotoError(ro ? "Nu am putut încărca poza. Alege un JPEG, PNG sau WebP de maximum 15 MB." : "Couldn’t load that photo. Choose a JPEG, PNG or WebP up to 15 MB.");
     } finally { setPreparingPhoto(false); }
@@ -66,10 +70,10 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (pending || preparingPhoto || question.trim().length < 2) return;
-    setElapsed(0); setPending(true); setFeedback("");
+    setElapsed(0); setPending(true);
     try {
-      const answer = await askConcierge({ question: question.trim(), city, language, context, ...(photo ? { photo } : {}) });
-      setResult(answer);
+      const answer = await askConcierge({ question: question.trim(), city, language, context, ...(shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(photo ? { photo } : {}) });
+      setResult(answer); setAnsweredQuestion(question.trim());
       if (answer.status !== "error") {
         const reply = answer.status === "clarify" ? answer.message : answer.segments.map(s => s.text).join("");
         setContext(previous => [...previous, `User: ${question.trim()}\nPrevious response (recheck current facts): ${(reply || "").slice(0, 1800)}`.slice(0, 4000)].slice(-4));
@@ -104,8 +108,16 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <p className="flex-1 text-muted">{ro ? "Poza va fi trimisă cu această întrebare și următoarele până o elimini. Nu este salvată de INeed." : "This photo is sent with this question and follow-ups until removed. INeed does not save it."}</p>
         <button type="button" disabled={pending || preparingPhoto} onClick={removePhoto} className="text-brand underline">{ro ? "Elimină poza" : "Remove photo"}</button>
       </div>}
+      {shareOpen && <section id="share-recommendation" className="share-panel">
+        <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-medium">{ro ? "Distribuie în INeed" : "Share with INeed"}</h2><button type="button" disabled={pending} onClick={()=>{setShareOpen(false);setSharedText("");setSharedUrl("");setContext([]);setResult(null);}} className="text-xs underline">{ro ? "Elimină" : "Remove"}</button></div>
+        <p className="text-xs text-muted">{ro ? "Adaugă o recomandare, o postare sau o captură de ecran cu butonul Poză. Scrie mai sus ce vrei să afli." : "Add a recommendation, post, or screenshot using Photo. Tell us above what you want to know."}</p>
+        <label className="block text-xs">{ro ? "Link către sursă (opțional)" : "Source link (optional)"}<input type="url" value={sharedUrl} maxLength={2000} disabled={pending} onChange={e=>{setSharedUrl(e.target.value);setContext([]);setResult(null);}} placeholder="https://…" className="shared-input mt-2" /></label>
+        <label className="block text-xs">{ro ? "Textul postării sau recomandării (opțional)" : "Post or recommendation text (optional)"}<textarea value={sharedText} maxLength={6000} rows={4} disabled={pending} onChange={e=>{setSharedText(e.target.value);setContext([]);setResult(null);}} className="shared-input mt-2" /></label>
+        <p className="text-xs text-muted">{ro ? "Linkurile private pot fi inaccesibile. Copiază textul sau adaugă o captură, fără date personale inutile. Conținutul rămâne atașat pentru întrebările următoare până îl elimini; nu este salvat de INeed." : "Private links may be inaccessible. Paste text or add a screenshot, leaving out unnecessary personal details. Content stays attached for follow-ups until removed; INeed does not save it."}</p>
+      </section>}
       <div className="composer-toolbar">
         <div className="photo-actions">
+          <button type="button" disabled={pending || preparingPhoto} aria-expanded={shareOpen} aria-controls="share-recommendation" onClick={()=>setShareOpen(true)} className="composer-tool"><Icon name="link" /><span>{ro ? "Distribuie" : "Share"}</span></button>
           <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
           <button type="button" disabled={pending || preparingPhoto} onClick={() => fileInput.current?.click()} className="composer-tool" title={ro ? "Adaugă o poză" : "Add a photo"}><Icon name="photo" /><span>{ro ? "Poză" : "Photo"}</span></button>
           <button type="button" disabled={pending || preparingPhoto} onClick={() => setCameraOpen(true)} className="composer-tool" title={ro ? "Fă o poză" : "Take a photo"}><Icon name="camera" /><span>{ro ? "Cameră" : "Camera"}</span></button>
@@ -114,7 +126,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       </div>
       {preparingPhoto && <p role="status" className="text-xs text-muted">{ro ? "Pregătesc poza…" : "Preparing photo…"}</p>}
     </form>
-    <p className="composer-privacy">{ro ? "Cererea și poza sunt procesate de Claude. Confidențialitate în meniu." : "Your request and photo are processed by Claude. Privacy details in the menu."}</p>
+    <p className="composer-privacy">{ro ? "Cererea, conținutul distribuit și poza sunt procesate de Claude. Confidențialitate în meniu." : "Your request, shared content and photo are processed by Claude. Privacy details in the menu."}</p>
     <div role="status" aria-live="polite" aria-busy={pending} className={pending || result ? "answer-region" : ""}>
       {pending && <p className="answer-loading">{elapsed >= 10 ? (ro ? "Încă lucrez. Verificarea surselor web poate dura mai mult." : "Still working. Checking web sources can take longer.") : (ro ? "Pregătesc răspunsul…" : "Preparing your answer…")} <span aria-hidden="true">{elapsed}s</span></p>}
       {!pending && result && <article className="answer-card">
@@ -123,13 +135,12 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
         {result.status === "answered" && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{result.searched ? (ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly.") : (ro ? "Sugestie AI; fără căutare web pentru acest răspuns." : "AI-generated guidance; no web search used for this answer.")}</p>}
         {result.plan && <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">{ro ? "Cum a înțeles INeed" : "How INeed understood this"}</summary><p className="mt-2">{result.plan.goal}</p><p>{ro ? "Acesta este un rezumat al cererii, nu raționamentul intern al AI." : "This is a task brief, not the AI’s internal reasoning."}</p></details>}
+        {result.status === "answered" && result.answerId && <AnswerFeedback key={result.answerId} answerId={result.answerId} question={answeredQuestion} answer={result.segments.map(s=>s.text).join("").slice(0,16000)} language={language} />}
       </article>}
     </div>
     {!context.length && !pending && <div className="suggestions">{examples.map((example, index) => <button key={example} title={example} onClick={() => {setQuestion(example);input.current?.focus();}} className="suggestion"><Icon name={index === 0 ? "home" : index === 1 ? "cook" : "place"} />{exampleLabels[index]}</button>)}</div>}
     {!!context.length && !pending && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-      <button disabled={preparingPhoto} onClick={() => {setQuestion("");removePhoto();input.current?.focus();}} className="text-brand underline">{ro ? "O cerere nouă" : "Start a new request"}</button>
-      {result?.status === "answered" && <button className="text-brand underline" onClick={() => { const text = JSON.stringify({ context, city, result, feedback: "Add your feedback here / Scrie feedback aici" }, null, 2); const url = URL.createObjectURL(new Blob([text], {type:"text/plain"})); const a = document.createElement("a"); a.href=url;a.download="ineed-test-feedback.txt";a.click();URL.revokeObjectURL(url);setFeedback(ro ? "Descărcat. Adaugă observațiile și trimite organizatorului testului." : "Downloaded. Add your comments and share with the pilot organiser."); }}>{ro ? "Descarcă testul pentru feedback" : "Download this test for feedback"}</button>}
-      {feedback && <p role="status" className="w-full text-muted">{feedback}</p>}
+      <button disabled={preparingPhoto} onClick={() => {setQuestion("");removePhoto();setSharedText("");setSharedUrl("");setShareOpen(false);input.current?.focus();}} className="text-brand underline">{ro ? "O cerere nouă" : "Start a new request"}</button>
     </div>}
       </section>
     </main>

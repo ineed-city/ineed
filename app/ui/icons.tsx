@@ -1,5 +1,6 @@
-type IconName = 'menu' | 'pin' | 'chevron' | 'photo' | 'camera' | 'arrow' | 'home' | 'cook' | 'place' | 'close';
+type IconName = 'link' | 'menu' | 'pin' | 'chevron' | 'photo' | 'camera' | 'arrow' | 'home' | 'cook' | 'place' | 'close';
 const paths: Record<IconName, React.ReactNode> = {
+  link: <><path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" /></>,
   menu: <path d="M4 8h16M4 16h16" />,
   pin: <><path d="M19 10c0 5-7 10-7 10S5 15 5 10a7 7 0 1 1 14 0Z" /><circle cx="12" cy="10" r="2" /></>,
   chevron: <path d="m9 5 7 7-7 7" />,

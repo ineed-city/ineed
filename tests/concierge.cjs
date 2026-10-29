@@ -229,3 +229,36 @@ test('location lookup works without AbortSignal.timeout',async()=>{
   const result=await detect(fakeGeo({latitude:44,longitude:26,accuracy:10}),async()=>({ok:true,json:async()=>({city:'Bucharest',countryName:'Romania'})}));
   assert.equal(result,'Bucharest, Romania');
 });
+
+test('shared content is bounded and private or executable source URLs rejected',()=>{
+  for (const shared of [{text:'x'.repeat(6001),url:''},{text:'post',url:'javascript:alert(1)'},{text:'post',url:'http://127.0.0.1/test'}]) assert.equal(contracts.RequestSchema.safeParse({...request,shared}).success,false);
+  assert.equal(contracts.RequestSchema.safeParse({...request,shared:{text:'Recommended by a neighbour',url:'https://facebook.com/groups/example/posts/1'}}).success,true);
+  assert.equal(contracts.quickPlan({...request,question:'I need a plumber',shared:{text:'A community recommendation',url:''}}),null);
+});
+test('shared link forces evidence search even when the planner suggests general guidance',async()=>{
+  const s=service([{stop_reason:'end_turn',content:[searched,cited]}],{...plan,category:'general',needsWeb:false});
+  const result=await s.answerNeed({...request,shared:{url:'https://facebook.com/groups/example',text:''}});
+  assert.equal(result.status,'answered');assert.equal(s.calls[0].tools[0].name,'web_search');
+  assert.match(s.calls[0].system,/never call its recommendations verified/);
+});
+test('unreadable shared link asks for text or a screenshot instead of inventing a recommendation',async()=>{
+  const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Unverified claim'}]}]);
+  const result=await s.answerNeed({...request,shared:{url:'https://facebook.com/groups/example',text:''}});
+  assert.equal(result.status,'error');assert.match(result.message,/screenshot/);
+});
+const feedbackRules=load('lib/concierge/feedback.ts');
+const feedbackReport={answerId:'550e8400-e29b-41d4-a716-446655440000',rating:'helpful',comment:'Useful',question:'How can I cook rice?',answer:'Simmer until cooked.',language:'en'};
+test('feedback rejects malformed IDs, ratings and oversized reports',()=>{
+  assert.equal(feedbackRules.FeedbackSchema.safeParse(feedbackReport).success,true);
+  for (const change of [{answerId:'fake'},{rating:'bad'},{comment:'x'.repeat(1001)},{answer:'x'.repeat(16001)}]) assert.equal(feedbackRules.FeedbackSchema.safeParse({...feedbackReport,...change}).success,false);
+});
+test('feedback requires auth, uses authenticated ID and strips photos or posts',async()=>{
+  let id=null, captured, dbError=null;
+  const db={auth:{getClaims:async()=>({data:{claims:id?{sub:id}:null}})},from:()=>({upsert:async row=>{captured=row;return {error:dbError};}})};
+  const {submitFeedback}=load('app/feedback-actions.ts',{'@/lib/supabase/server':{createClient:async()=>db},'@/lib/concierge/feedback':feedbackRules});
+  assert.equal((await submitFeedback(feedbackReport)).ok,false);assert.equal(captured,undefined);
+  id='authenticated-user';
+  assert.equal((await submitFeedback({...feedbackReport,user_id:'another-user',photo:'private',shared:{text:'private'}})).ok,true);
+  assert.equal(captured.user_id,id);assert.equal(captured.photo,undefined);assert.equal(captured.shared,undefined);
+  dbError={code:'unavailable'};assert.equal((await submitFeedback(feedbackReport)).ok,false);
+});
