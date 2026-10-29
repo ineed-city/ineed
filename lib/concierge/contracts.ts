@@ -4,6 +4,10 @@ export const PhotoSchema = z.string().max(650_000)
   .regex(/^data:image\/jpeg;base64,\/9j\/(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 
 export const RequestSchema = z.object({
+  shared: z.object({
+    text: z.string().trim().max(6000),
+    url: z.string().trim().max(2000).refine(value => !value || Boolean(safeSourceUrl(value))),
+  }).optional(),
   photo: PhotoSchema.optional(),
   question: z.string().trim().min(2).max(2000),
   city: z.string().trim().max(100),
@@ -20,6 +24,7 @@ export type ConciergeRequest = z.infer<typeof RequestSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type Segment = { text: string; sources: { title: string; url: string }[] };
 export type ConciergeResult = {
+  answerId?: string;
   status: "answered" | "clarify" | "error";
   segments: Segment[];
   plan?: Plan;
@@ -40,7 +45,7 @@ export function safeSourceUrl(value: string): string | null {
 // Skip the separate AI planner only for clear first-turn requests. Ambiguous
 // requests and all follow-ups keep the planner and its clarification behavior.
 export function quickPlan(input: ConciergeRequest): Plan | null {
-  if (input.photo || input.context.length || input.question.length > 240) return null;
+  if (input.shared || input.photo || input.context.length || input.question.length > 240) return null;
   const q = input.question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (input.city.trim() && /\b(plumber|handyman|restaurant|restaurants|cafe|cafes|electrician|instalator|restaurante|cafenea)\b/.test(q)) {
     return { goal: input.question, category: "local", needsWeb: true, clarification: null };

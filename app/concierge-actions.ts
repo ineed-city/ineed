@@ -9,7 +9,7 @@ const usage = new Map<string, { count: number; expires: number; busy: boolean }>
 
 export async function askConcierge(raw: unknown): Promise<ConciergeResult> {
   const parsed = RequestSchema.safeParse(raw);
-  if (!parsed.success) return { status: "error", segments: [], message: "Please enter 2–2,000 characters and use a valid photo under 650 KB. / Verifică întrebarea și poza." };
+  if (!parsed.success) return { status: "error", segments: [], message: "Check your question (2–2,000 characters), shared text (up to 6,000), public http/https link and photo. / Verifică întrebarea, textul distribuit, linkul și poza." };
   const ro = parsed.data.language === "ro";
   try {
     const db = await createClient();
@@ -22,7 +22,7 @@ export async function askConcierge(raw: unknown): Promise<ConciergeResult> {
     if (entry.busy || entry.count >= 15) return { status: "error", segments: [], message: ro ? "Ai atins limita pilotului. Încearcă mai târziu." : "Pilot request limit reached. Please try again later." };
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("AI not configured");
     entry.count++; entry.busy = true; usage.set(id, entry);
-    try { return await answerNeed(parsed.data); }
+    try { return { ...await answerNeed(parsed.data), answerId: crypto.randomUUID() }; }
     finally { entry.busy = false; }
   } catch (error) {
     console.error("concierge failed", error instanceof Error ? error.name : "UnknownError");

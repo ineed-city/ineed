@@ -114,3 +114,13 @@ button:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Optional sharing and answer feedback stay quiet until opened. */
+.share-panel { display: grid; gap: 14px; padding: 18px 0; border-top: 1px solid var(--color-line); }
+.shared-input { width: 100%; border: 1px solid var(--color-line); border-radius: 12px; background: white; padding: 10px 12px; font-size: 14px; resize: vertical; }
+.shared-input:focus { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+.answer-feedback { border-top: 1px solid var(--color-line); margin-top: 20px; padding-top: 16px; font-size: 12px; }
+.feedback-choice { border: 1px solid var(--color-line); border-radius: 999px; padding: 8px 14px; }
+.feedback-choice[aria-pressed="true"] { background: var(--color-brand); color: white; border-color: var(--color-brand); }
+.feedback-choice:disabled { opacity: .6; }
+@media (max-width: 400px) { .photo-actions { gap: 2px; } .composer-tool { padding: 8px 5px; font-size: 11px; } }
