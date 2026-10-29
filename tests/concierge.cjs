@@ -580,3 +580,10 @@ test('history strips Google listings and keeps a refresh action',()=>{
   assert.equal(parsed.result.nextSteps[0].actions[0].prompt,raw.question);
   assert.ok(!historyRules.chatContext([raw])[0].includes('Provider'));
 });
+
+test('ordinary pharmacy lookup excludes explicitly agricultural pharmacy listings',async()=>{
+ let calls=0;
+ const result=await maps.mapAnswer({...request,city:'Campia Turzii'},mapPlan,async()=>({ok:true,json:async()=>({places:++calls===1?[park]:[{...pharmacy,id:'agri',displayName:{text:'Fito Farmacie'}},pharmacy]})}));
+ assert.equal(result.nextSteps.length,1);
+ assert.equal(result.nextSteps[0].title,'Test pharmacy');
+});

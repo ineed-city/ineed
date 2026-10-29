@@ -46,11 +46,12 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
       const matches=candidates.filter(p=>sameCity(p,input.city) && nameMatches(search.landmark!,p.displayName.text) && (!search.landmarkType || p.types?.includes(search.landmarkType)));
       if(matches.length!==1) return {status:'clarify',plan,segments:[],message:ro?`Nu pot identifica sigur „${search.landmark}” în ${input.city}. Îmi dai strada sau un link Google Maps al reperului?`:`I can’t reliably identify “${search.landmark}” in ${input.city}. What street is it on, or can you share its Google Maps link?`};
       anchor=matches[0];
-      places=await lookup('searchNearby',{includedTypes:[search.placeType],maxResultCount:5,rankPreference:'DISTANCE',locationRestriction:{circle:{center:anchor.location,radius:1500}}},true);
+      places=await lookup('searchNearby',{includedTypes:[search.placeType],maxResultCount:10,rankPreference:'DISTANCE',locationRestriction:{circle:{center:anchor.location,radius:1500}}},true);
     } else {
       places=await lookup('searchText',{textQuery:`${search.query}, ${input.city}`,includedType:search.placeType,strictTypeFiltering:true,pageSize:5},true);
       places=places.filter(p=>sameCity(p,input.city));
     }
+    places=places.filter(p=>search.placeType!=='pharmacy' || !/\b(fito farmacie|fitofarmacie|fitosanitara|farmacie veterinara|veterinary pharmacy)\b/.test(normalize(p.displayName.text)));
     places=places.filter(p=>p.businessStatus!=='CLOSED_PERMANENTLY'&&p.businessStatus!=='CLOSED_TEMPORARILY').slice(0,3);
     const segments:ConciergeResult['segments']=[];
     if(anchor) segments.push({text:ro?`Am găsit reperul ${anchor.displayName.text}. Opțiuni de pe hartă în raza de 1,5 km:\n\n`:`I found ${anchor.displayName.text}. Map listings within 1.5 km:\n\n`,sources:[{title:'Google Maps',url:mapUrl(anchor)}]});
@@ -62,7 +63,7 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
       const actions:NextAction[]=[{type:'website',label:ro?'Deschide harta':'Open map',url:mapUrl(p)}];
       const phone=p.internationalPhoneNumber?.replace(/[\s().-]/g,'');
       if(phone && /^\+[1-9]\d{6,14}$/.test(phone)) actions.push({type:'call',label:ro?'Sună':'Call',phone,sourceUrl:mapUrl(p)});
-      else actions.push({type:'website',label:ro?'Detalii și program':'Details and hours',url:mapUrl(p)});
+      else actions.push({type:'website',label:ro?'Traseu':'Directions',url:`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.displayName.text+' '+p.formattedAddress)}&destination_place_id=${encodeURIComponent(p.id)}`});
       return {title:p.displayName.text.slice(0,60),actions};
     })};
   } catch(error) {
