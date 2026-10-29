@@ -539,7 +539,7 @@ test('follow-up destination can use a previous user request',()=>{
   assert.equal(contracts.resolveDestination(input,p).city,'Campia Turzii');
 });
 
-const maps=load('lib/concierge/maps.ts',{'server-only':{}},{process:{env:{GOOGLE_MAPS_API_KEY:'test-secret'}}});
+const maps=load('lib/concierge/maps.ts',{'server-only':{},'./contracts':contracts},{process:{env:{GOOGLE_MAPS_API_KEY:'test-secret'}}});
 const park={id:'park-1',displayName:{text:'Parcul Municipal Berc'},formattedAddress:'Câmpia Turzii, Romania',location:{latitude:46.55,longitude:23.88},types:['park'],addressComponents:[{longText:'Câmpia Turzii',types:['locality']}]};
 const pharmacy={...park,id:'pharmacy-1',displayName:{text:'Test pharmacy'},types:['pharmacy'],internationalPhoneNumber:'+40 123 456 789'};
 const mapPlan={...plan,mapSearch:{landmark:'parcului Berg',landmarkType:'park',placeType:'pharmacy',query:'farmacie'}};
@@ -568,7 +568,7 @@ test('map failure never fabricates a nearby result',async()=>{
   assert.equal(result.status,'error'); assert.equal(result.segments.length,0);
 });
 test('map adapter skips unavailable credentials and unsupported tasks',async()=>{
-  const noKey=load('lib/concierge/maps.ts',{'server-only':{}},{fetch:()=>{throw Error('unexpected')}});
+  const noKey=load('lib/concierge/maps.ts',{'server-only':{},'./contracts':contracts},{fetch:()=>{throw Error('unexpected')}});
   assert.equal(await noKey.mapAnswer(request,mapPlan),null);
   assert.equal(await maps.mapAnswer(request,{...plan,mapSearch:null},()=>{throw Error('unexpected')}),null);
 });
@@ -632,4 +632,60 @@ test('successful salon search does not issue an extra lookup',async()=>{
   let calls=0;
   const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'hair_salon',query:'coafor'}},async()=>{calls++;return {ok:true,json:async()=>({places:[{...pharmacy,types:['hair_salon']}]})};});
   assert.equal(calls,1);assert.equal(result.nextSteps.length,1);
+});
+
+test('fresh GPS returns five closest listings with sourced facts and excludes distant places',async()=>{
+ const point={latitude:46.55,longitude:23.88,accuracy:30,capturedAt:Date.now()};
+ const nearby=Array.from({length:7},(_,i)=>({...pharmacy,id:`near-${i}`,displayName:{text:`Restaurant ${i}`},location:{latitude:46.55+(i+1)*.001,longitude:23.88},rating:4.5,userRatingCount:650,primaryTypeDisplayName:{text:'Restaurant italian'},types:['italian_restaurant'],currentOpeningHours:{openNow:true},servesVegetarianFood:true}));
+ let body;
+ const result=await maps.mapAnswer({...request,city:'Campia Turzii',language:'ro',deviceLocation:point},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'restaurant',query:'restaurant'}},async(url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({places:[{...nearby[0],id:'far',location:{latitude:45,longitude:23}},...nearby.reverse()]})};});
+ assert.equal(body.locationBias.circle.center.latitude,point.latitude);assert.equal(body.rankPreference,'DISTANCE');
+ assert.equal(result.nextSteps.length,5);assert.equal(result.nextSteps[0].title,'Restaurant 0');
+ const text=result.segments.map(s=>s.text).join('');
+ assert.match(text,/4.5 \/ 5 Google · 650 recenzii/);assert.match(text,/Bucătărie italiană/);assert.match(text,/linie dreaptă/);
+ assert.equal(nextSteps.NextStepsSchema.safeParse(result.nextSteps).success,true);
+ const raw={id:'11111111-1111-4111-8111-111111111111',question:request.question,city:'Campia Turzii',language:'ro',hadPhoto:false,result};
+ const stored=JSON.stringify(historyRules.SavedTurnSchema.parse(raw));
+ assert.ok(!stored.includes('650'));assert.ok(!stored.includes('Restaurant 0'));
+});
+test('named venue searches preserve name and omit category filter',async()=>{
+ let body;
+ const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{businessName:'La Strada',landmark:null,landmarkType:null,placeType:'restaurant',query:'restaurant'}},async(url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({places:[{...pharmacy,displayName:{text:'Restaurant La Strada'},rating:4.5,userRatingCount:650},pharmacy]})};});
+ assert.equal(body.textQuery,'La Strada, Campia Turzii');assert.equal(body.includedType,undefined);
+ assert.equal(result.nextSteps.length,1);assert.equal(result.nextSteps[0].title,'Restaurant La Strada');
+});
+test('empty named venue lookup hands off to web instead of claiming no venue',async()=>{
+ const result=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{businessName:'La Strada',landmark:null,landmarkType:null,placeType:'restaurant',query:'La Strada'}},async()=>({ok:true,json:async()=>({places:[]})}));
+ assert.equal(result,null);
+});
+test('stale GPS is not used and an explicit destination removes GPS',async()=>{
+ const deviceLocation={latitude:44,longitude:26,accuracy:20,capturedAt:Date.now()-180000};
+ assert.equal(contracts.freshDeviceLocation(deviceLocation),undefined);
+ assert.equal(contracts.RequestSchema.safeParse({...request,deviceLocation:{...deviceLocation,accuracy:5000}}).success,false);
+ const p={...plan,destination:{city:'Paris',source:'question',clarificationReason:'none'}};
+ assert.equal(contracts.resolveDestination({...request,question:'Restaurants in Paris',deviceLocation},p).deviceLocation,undefined);
+ let body;
+ await maps.mapAnswer({...request,city:'Campia Turzii',deviceLocation},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'pharmacy',query:'farmacie'}},async(url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({places:[pharmacy]})};});
+ assert.equal(body.locationBias,undefined);
+});
+test('precise coordinates never reach planning or answer model messages',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}]);
+ await s.answerNeed({...request,deviceLocation:{latitude:44.123456,longitude:26.987654,accuracy:20,capturedAt:Date.now()}});
+ assert.ok(!JSON.stringify([...s.planning,...s.calls]).includes('44.123456'));
+ assert.ok(!JSON.stringify([...s.planning,...s.calls]).includes('deviceLocation'));
+});
+test('request-time refresh bypasses the area cache',async()=>{
+ let calls=0;
+ const tracker=createLiveLocation(async()=>`City ${++calls}`,()=>true);
+ await tracker.enable();await tracker.refresh();assert.equal(calls,1);
+ await tracker.refresh(true);assert.equal(calls,2);
+ tracker.disable();await tracker.refresh(true);assert.equal(calls,2);
+});
+test('GPS coordinates are returned only after successful area detection',async()=>{
+ let received;
+ await detectArea(fakeGeo({latitude:44.123456,longitude:26.987654,accuracy:50}),async()=>({ok:true,json:async()=>({city:'Bucharest',countryName:'Romania'})}),undefined,p=>{received=p;});
+ assert.equal(received.latitude,44.123456);assert.equal(received.accuracy,50);
+ received=undefined;
+ await assert.rejects(detectArea(fakeGeo({latitude:44,longitude:26,accuracy:50}),async()=>({ok:false}),undefined,p=>{received=p;}));
+ assert.equal(received,undefined);
 });

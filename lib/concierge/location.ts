@@ -1,5 +1,6 @@
+import type { DeviceLocation } from './contracts';
 // Used after an explicit one-time request or opt-in to foreground automatic updates.
-export async function detectArea(geo: Geolocation | undefined, request: typeof fetch = fetch, signal?: AbortSignal): Promise<string> {
+export async function detectArea(geo: Geolocation | undefined, request: typeof fetch = fetch, signal?: AbortSignal, onPosition?: (point:DeviceLocation)=>void): Promise<string> {
   if (!geo) throw new Error('unsupported');
   const position = await new Promise<GeolocationPosition>((resolve, reject) => {
     // Some browsers leave the permission prompt pending beyond the native timeout.
@@ -18,7 +19,7 @@ export async function detectArea(geo: Geolocation | undefined, request: typeof f
     try {
       // Keep this synchronous with the user's tap, including on Safari.
       geo.getCurrentPosition(position => finish(position), error => finish(undefined, error.code === 1 ? 'denied' : error.code === 3 ? 'timeout' : 'unavailable'), {
-        enableHighAccuracy: false, timeout: 12000, maximumAge: 0,
+        enableHighAccuracy: Boolean(onPosition), timeout: 12000, maximumAge: 0,
       });
     } catch { finish(undefined, 'unavailable'); }
   });
@@ -48,5 +49,6 @@ export async function detectArea(geo: Geolocation | undefined, request: typeof f
   if ((!data.locality && !data.city) || !data.countryName) throw new Error('lookup');
   const area = [...new Set(parts)].join(', ');
   if (area.length > 100) throw new Error('lookup');
+  if(onPosition && accuracy<=1000) onPosition({latitude,longitude,accuracy,capturedAt:Date.now()});
   return area;
 }

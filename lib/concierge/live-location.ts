@@ -11,10 +11,10 @@ export function createLiveLocation(detect: (signal: AbortSignal) => Promise<stri
   const listeners = new Set<() => void>();
   const publish = (next: LiveLocationState) => { state = next; listeners.forEach(fn => fn()); };
   const cancel = () => { revision++; controller?.abort(); controller = undefined; pending = undefined; updated = 0; };
-  const refresh = (): Promise<string> => {
+  const refresh = (force=false): Promise<string> => {
     if (!state.enabled || !visible() || state.status === 'denied') return Promise.resolve('');
     if (pending) return pending;
-    if (state.status === 'ready' && now() - updated < 60_000) return Promise.resolve(state.area);
+    if (!force && state.status === 'ready' && now() - updated < 60_000) return Promise.resolve(state.area);
     controller = new AbortController();
     const token = ++revision;
     publish({ enabled: true, area: '', status: 'checking' });

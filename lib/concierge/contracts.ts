@@ -4,6 +4,14 @@ import { z } from "zod";
 export const PhotoSchema = z.string().max(650_000)
   .regex(/^data:image\/jpeg;base64,\/9j\/(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 
+export const DeviceLocationSchema = z.object({
+  latitude:z.number().min(-90).max(90), longitude:z.number().min(-180).max(180),
+  accuracy:z.number().min(0).max(1000), capturedAt:z.number().int().positive(),
+});
+export type DeviceLocation = z.infer<typeof DeviceLocationSchema>;
+export function freshDeviceLocation(point:DeviceLocation|undefined, now=Date.now()) {
+  return point && point.capturedAt<=now+5000 && now-point.capturedAt<=120000 ? point : undefined;
+}
 export const RequestSchema = z.object({
   shared: z.object({
     text: z.string().trim().max(6000),
@@ -12,6 +20,7 @@ export const RequestSchema = z.object({
   photo: PhotoSchema.optional(),
   question: z.string().trim().min(2).max(2000),
   city: z.string().trim().max(100),
+  deviceLocation: DeviceLocationSchema.optional(),
   language: z.enum(["en", "ro"]),
   context: z.array(z.string().max(4000)).max(30),
 });
@@ -21,6 +30,7 @@ export const PlanSchema = z.object({
   needsWeb: z.boolean(),
   clarification: z.string().nullable(),
   mapSearch: z.object({
+    businessName: z.string().max(160).nullable().optional(),
     landmark: z.string().max(160).nullable(),
     landmarkType: z.enum(['park','train_station','shopping_mall','hospital']).nullable(),
     placeType: z.enum(['pharmacy','restaurant','cafe','supermarket','hospital','gas_station','lodging','car_repair','bakery','dentist','veterinary_care','atm','hair_salon','hair_care','barber_shop','beauty_salon','nail_salon','plumber','electrician','locksmith','florist','laundry']),
@@ -85,5 +95,5 @@ export function resolveDestination(input: ConciergeRequest, plan: Plan): Concier
   // A different saved city is never a reason to ask permission to search.
   // Preserve genuine ambiguity and missing task details.
   if (destination.clarificationReason === 'confirm_city') plan.clarification = null;
-  return { ...input, city: destination.city };
+  return { ...input, city: destination.city, deviceLocation: undefined };
 }

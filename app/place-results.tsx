@@ -7,16 +7,17 @@ export function PlaceResults({result,ro}:{result:Pick<ConciergeResult,'segments'
   const listings=groups.map(group=>{
     const link=group.actions.find(a=>a.type==='website');
     const segment=link?.type==='website' ? result.segments.find(s=>s.sources.some(source=>source.url===link.url)) : undefined;
-    const [name,...address]=(segment?.text.trim() || group.title).split('\n');
-    return {group,segment,name,address:address.join(' ').trim()};
+    const [name,address,...details]=(segment?.text.trim() || group.title).split('\n');
+    return {group,segment,name,address:address?.trim(),details:details.filter(Boolean)};
   });
   const attribution=result.segments.at(-1);
   const introduction=result.segments.filter(s=>s!==attribution&&!listings.some(l=>l.segment===s));
   return <section className="place-results" aria-label={ro?'Locuri găsite':'Places found'}>
     {introduction.map((s,i)=><p key={i} className="place-intro">{s.text.trim()}</p>)}
-    <div className="place-list">{listings.map(({group,name,address},i)=><article className="place-card" key={i}>
+    <div className="place-list">{listings.map(({group,name,address,details},i)=><article className="place-card" key={i}>
       <h3 className="place-name">{name}</h3>
       {address&&<p className="place-address">{address}</p>}
+      {details.map((detail,j)=><p key={j} className="place-detail">{detail}</p>)}
       <div className="place-actions">{group.actions.map((action,j)=>{
         const isCall=action.type==='call';
         const href=isCall?`tel:${action.phone}`:action.type==='website'?safeSourceUrl(action.url):null;
