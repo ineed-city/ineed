@@ -352,3 +352,43 @@ test('answer action takes first name only from authenticated account metadata',a
   authenticated=false;name=undefined;
   assert.equal((await askConcierge(request)).status,'error');assert.equal(name,undefined);
 });
+
+const {createLiveLocation}=load('lib/concierge/live-location.ts',{}, {Error});
+test('automatic location is opt-in, refreshes changed cities, and reuses only a fresh area',async()=>{
+  let now=0,calls=0,area='Bucharest';
+  const tracker=createLiveLocation(async()=>{calls++;return area;},()=>true,()=>now);
+  assert.equal(await tracker.refresh(),'');assert.equal(calls,0);
+  assert.equal(await tracker.enable(),'Bucharest');assert.equal(calls,1);
+  now=59_999;area='Cluj';assert.equal(await tracker.refresh(),'Bucharest');assert.equal(calls,1);
+  now=60_000;assert.equal(await tracker.refresh(),'Cluj');assert.equal(calls,2);
+  tracker.disable();assert.equal(tracker.getSnapshot().area,'');assert.equal(await tracker.refresh(),'');assert.equal(calls,2);
+});
+test('turning automatic location off cancels in-flight updates and ignores a late result',async()=>{
+  let resolve,signal;
+  const tracker=createLiveLocation(s=>{signal=s;return new Promise(r=>{resolve=r;});},()=>true);
+  const pending=tracker.enable();tracker.disable();
+  assert.equal(signal.aborted,true);resolve('Old city');assert.equal(await pending,'');
+  assert.equal(tracker.getSnapshot().enabled,false);assert.equal(tracker.getSnapshot().area,'');
+});
+test('hidden pages do not locate and resume requires a new fix',async()=>{
+  let visible=true,calls=0;
+  const tracker=createLiveLocation(async()=>{calls++;return 'Paris';},()=>visible);
+  await tracker.enable();visible=false;tracker.pause();assert.equal(await tracker.refresh(),'');assert.equal(calls,1);
+  assert.equal(tracker.getSnapshot().area,'');visible=true;assert.equal(await tracker.refresh(),'Paris');assert.equal(calls,2);
+});
+test('location denial clears old area and does not repeatedly prompt without a retry',async()=>{
+  let now=0,calls=0,denied=false;
+  const tracker=createLiveLocation(async()=>{calls++;if(denied)throw new Error('denied');return 'Paris';},()=>true,()=>now);
+  await tracker.enable();denied=true;now=61_000;
+  assert.equal(await tracker.refresh(),'');assert.equal(tracker.getSnapshot().status,'denied');assert.equal(tracker.getSnapshot().area,'');
+  await tracker.refresh();assert.equal(calls,2);
+  denied=false;assert.equal(await tracker.enable(),'Paris');assert.equal(calls,3);
+});
+test('automatic location coalesces concurrent refreshes and recovers from lookup failures',async()=>{
+  let resolve,calls=0,fail=false,now=0;
+  const tracker=createLiveLocation(()=>{calls++;return fail?Promise.reject(new Error('lookup')):new Promise(r=>{resolve=r;});},()=>true,()=>now);
+  const first=tracker.enable(),second=tracker.refresh();resolve('Paris');
+  assert.equal(await first,'Paris');assert.equal(await second,'Paris');assert.equal(calls,1);
+  fail=true;now=61_000;assert.equal(await tracker.refresh(),'');assert.equal(tracker.getSnapshot().status,'unavailable');assert.equal(tracker.getSnapshot().area,'');
+  fail=false;const retry=tracker.refresh();resolve('Lyon');assert.equal(await retry,'Lyon');
+});

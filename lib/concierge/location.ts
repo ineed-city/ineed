@@ -1,4 +1,4 @@
-// Called only after the user presses the location button; never track in the background.
+// Used after an explicit one-time request or opt-in to foreground automatic updates.
 export async function detectArea(geo: Geolocation | undefined, request: typeof fetch = fetch, signal?: AbortSignal): Promise<string> {
   if (!geo) throw new Error('unsupported');
   const position = await new Promise<GeolocationPosition>((resolve, reject) => {
