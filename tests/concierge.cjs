@@ -15,13 +15,14 @@ function load(file, mocks = {}, globals = {}) {
   return testModule.exports;
 }
 const nextSteps = load('lib/concierge/next-steps.ts');
+const localCorrections = load('lib/concierge/local-corrections.ts');
 const contracts = load('lib/concierge/contracts.ts');
 const request = {question:'Find somewhere for tonight',city:'Bucharest, Romania',language:'en',context:[]};
 const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarification:null};
-function service(responses, chosen = plan) {
+function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, './next-steps':nextSteps, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -441,4 +442,49 @@ test('local search preserves explicit destination and neighborhood through plann
   const payload=JSON.parse(s.calls[0].messages[0].content[0].text);
   assert.equal(payload.question,'Where can I find a pharmacy in Riverside, Exampletown?');
   assert.equal(payload.city,'Another city');
+});
+
+test('reviewed local corrections match the city, area and need, expire, and never use private context',()=>{
+  const input={...request,question:'Caut o FARMACIE in zona Blocuri din Campia Turzii.',city:'Orsova'};
+  const now=new Date('2026-10-29T12:00:00Z');
+  const sources=localCorrections.reviewedLocalSources(input,plan,now);
+  assert.equal(sources.length,2);assert.match(sources[0].content[0].text,/Barițiu nr.59/);
+  for(const patch of [{question:'Caut restaurant in zona Blocuri din Campia Turzii'}, {question:'Caut farmacie in zona Blocuri din Turda',city:'Campia Turzii'}, {question:'Caut farmacie in centru Campia Turzii'}, {question:'Caut farmacie',context:[input.question]}, {shared:{text:input.question,url:''}}, {photo:'a photo'}]) {
+    assert.equal(localCorrections.reviewedLocalSources({...input,...patch},plan,now).length,0);
+  }
+  assert.equal(localCorrections.reviewedLocalSources(input,{...plan,category:'general'},now).length,0);
+  assert.equal(localCorrections.reviewedLocalSources(input,plan,new Date('2026-11-28')).length,0);
+  assert.equal(localCorrections.reviewedLocalSources(input,plan,new Date('2026-10-28')).length,0);
+});
+
+test('reviewed sources reach the model and their citations support maps and calls',async()=>{
+  const input={...request,question:'Caut farmacie zona Blocuri Campia Turzii'};
+  const reviewDate=new Date('2026-10-29T12:00:00Z');
+  const sources=localCorrections.reviewedLocalSources(input,plan,reviewDate);
+  const title='Catena Gheorghe Baritiu 59';
+  const destination='Str. Gheorghe Baritiu Nr. 59, Câmpia Turzii, 405100, Cluj';
+  const groups=[{title,actions:[{type:'maps',label:'Hartă',destination,sourceUrl:sources[1].source},{type:'call',label:'Sună',phone:'+40755011335',sourceUrl:sources[1].source}]}];
+  const response={stop_reason:'end_turn',content:[{type:'text',text:'Catena, la adresa indicată.',citations:[{type:'search_result_location',source:sources[1].source,search_result_index:1,start_block_index:0,end_block_index:1,cited_text:sources[1].content[0].text}]}]};
+  const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'actions',name:'present_next_steps',input:{groups}}]},response],plan,{reviewDate});
+  const result=await s.answerNeed(input);
+  assert.equal(s.calls[0].messages[0].content.filter(b=>b.type==='search_result').length,2);
+  assert.equal(result.status,'answered');assert.equal(result.searched,false);
+  assert.equal(result.segments[0].sources[0].url,sources[1].source);
+  assert.equal(result.nextSteps[0].actions.length,2);
+});
+
+test('model cannot turn arbitrary source citations into reviewed facts',async()=>{
+  const reviewDate=new Date('2026-10-29T12:00:00Z');
+  const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Fake listing',citations:[{type:'search_result_location',source:'https://fake.example',search_result_index:0,start_block_index:0,end_block_index:1,cited_text:'fake'}]}]}],plan,{reviewDate});
+  const result=await s.answerNeed({...request,question:'Caut farmacie zona Blocuri Campia Turzii'});
+  assert.equal(result.status,'error');
+});
+
+
+test('a resolved street follow-up retains the task destination instead of the device city',()=>{
+  const input={...request,question:'Gheorghe Baritiu',city:'Orsova'};
+  const resolved={...plan,goal:'Find a pharmacy on Gheorghe Baritiu in Campia Turzii for the same task'};
+  const sources=localCorrections.reviewedLocalSources(input,resolved,new Date('2026-10-29T12:00:00Z'));
+  assert.equal(sources.length,2);
+  assert.equal(localCorrections.reviewedLocalSources(input,{...resolved,goal:'Find a pharmacy on Gheorghe Baritiu in Orsova'},new Date('2026-10-29T12:00:00Z')).length,0);
 });
