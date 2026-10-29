@@ -16,7 +16,7 @@ export const NextActionSchema = z.discriminatedUnion('type', [
   z.object({ type:z.literal('maps'), label, destination:z.string().trim().min(3).max(300), sourceUrl:z.string().max(2000).refine(publicLink) }),
   z.object({ type:z.literal('call'), label, phone:z.string().regex(/^\+[1-9]\d{6,14}$/), sourceUrl:z.string().max(2000).refine(publicLink) }),
 ]);
-export const NextStepsSchema = z.array(z.object({ title:label, actions:z.array(NextActionSchema).min(1).max(2) })).max(4);
+export const NextStepsSchema = z.array(z.object({ title:label, actions:z.array(NextActionSchema).min(1).max(2) })).max(5);
 export const PresentationSchema = z.object({ groups:NextStepsSchema });
 export type NextAction = z.infer<typeof NextActionSchema>;
 export type NextSteps = z.infer<typeof NextStepsSchema>;

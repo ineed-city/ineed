@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { SaveTurnSchema, SavedChatSchema, chatContext, type SavedChat, type ChatSummary } from '@/lib/concierge/history';
-import { RequestSchema, type ConciergeResult } from '@/lib/concierge/contracts';
+import { RequestSchema, resolveDestination, type ConciergeResult } from '@/lib/concierge/contracts';
 import { askConcierge } from './concierge-actions';
 
 async function account() {
@@ -56,7 +56,7 @@ export async function askSavedConcierge(raw:unknown, identity:unknown) {
   }
   const answer=await askConcierge(input);
   if(answer.status==='error') return {answer};
-  const turn={id:meta.turnId,question:input.question,result:{...answer,status:answer.status},city:input.city,language:input.language,hadPhoto:Boolean(input.photo),...(input.shared?{shared:input.shared}:{})};
+  const turn={id:meta.turnId,question:input.question,result:{...answer,status:answer.status},city:answer.plan?resolveDestination(input,answer.plan).city:input.city,language:input.language,hadPhoto:Boolean(input.photo),...(input.shared?{shared:input.shared}:{})};
   const saved=await saveChatTurn({id:meta.id,version:meta.version,turn});
   return {answer,turn,saved};
 }

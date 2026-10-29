@@ -1,11 +1,20 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { freshDeviceLocation, type DeviceLocation } from '@/lib/concierge/contracts';
 import { detectArea } from '@/lib/concierge/location';
 import { createLiveLocation, INITIAL_LOCATION } from '@/lib/concierge/live-location';
 
 export function useLiveLocation(account: string) {
-  const key = `ineed:live-location:${account}`;
-  const [tracker] = useState(() => createLiveLocation(signal => detectArea(navigator.geolocation, fetch, signal), () => document.visibilityState === 'visible'));
+  const key = `ineed:live-location-gps-v2:${account}`;
+  const [tracker] = useState(() => {
+    let point:DeviceLocation|undefined;
+    const source=createLiveLocation(signal => detectArea(navigator.geolocation, fetch, signal, value=>{point=value;}), () => document.visibilityState === 'visible');
+    return {...source, forSearch:async()=>{
+      point=undefined;
+      const area=await source.refresh(true);
+      return {area,deviceLocation:area && source.getSnapshot().enabled ? freshDeviceLocation(point) : undefined};
+    }};
+  });
   const state = useSyncExternalStore(tracker.subscribe, tracker.getSnapshot, () => INITIAL_LOCATION);
   useEffect(() => {
     let active = true;
@@ -25,5 +34,5 @@ export function useLiveLocation(account: string) {
   }, [key, tracker]);
   const enable = () => { try { localStorage.setItem(key, 'on'); } catch {} return tracker.enable(); };
   const disable = () => { try { localStorage.removeItem(key); } catch {} tracker.disable(); };
-  return { ...state, enable, disable, refresh: tracker.refresh };
+  return { ...state, enable, disable, refresh: tracker.refresh, forSearch:tracker.forSearch };
 }

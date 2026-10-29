@@ -147,9 +147,10 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     requestInFlight.current = true;
     setElapsed(0); setPending(true);
     try {
-      const requestCity = liveLocation.enabled ? await liveLocation.refresh() : city;
+      const location = liveLocation.enabled ? await liveLocation.forSearch() : {area:city,deviceLocation:undefined};
+      const requestCity = location.area;
       const id=chatId||crypto.randomUUID();
-      const response = await askSavedConcierge({ question: asked, city: requestCity, language, context, ...(!fromAction && shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(!fromAction && photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
+      const response = await askSavedConcierge({ question: asked, city: requestCity, deviceLocation:location.deviceLocation, language, context, ...(!fromAction && shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(!fromAction && photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
       const {answer}=response;
       setResult(answer); setAnsweredQuestion(asked);
       if (response.turn && response.saved) {
@@ -213,7 +214,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       </div>
       {preparingPhoto && <p role="status" className="text-xs text-muted">{ro ? "Pregătesc poza…" : "Preparing photo…"}</p>}
     </form>
-    <p className="composer-privacy">{ro ? "Textul conversației și linkurile sunt salvate în Istoric. Pozele nu sunt salvate. Cererile sunt procesate de Claude. Căutările pe hartă trimit locul și categoria către Google." : "Chat text and links are saved to History. Photos are not saved. Requests are processed by Claude. Map searches send the place and category to Google."}</p>
+    <p className="composer-privacy">{ro ? "Textul conversației și linkurile sunt salvate în Istoric. Pozele nu sunt salvate. Cererile sunt procesate de Claude. Căutările pe hartă trimit locul și categoria către Google; cu localizarea automată activă, trimit și coordonatele actuale." : "Chat text and links are saved to History. Photos are not saved. Requests are processed by Claude. Map searches send the place and category to Google; automatic location also sends current coordinates."}</p>
     {saveIssue && <div role="alert" className="my-4 text-sm text-red-800"><p>{saveIssue === "conflict" ? (ro ? "Conversația a fost modificată în altă filă. Acest răspuns nu a fost salvat. Copiază-l înainte să redeschizi conversația din Istoric." : "This chat changed in another tab. This answer was not saved. Copy it before reopening the conversation from History.") : (ro ? "Răspunsul nu a fost salvat în Istoric. Reîncearcă înainte să închizi pagina." : "This answer wasn’t saved to History. Retry before closing the page.")}</p>{saveIssue === "failed" && <button type="button" disabled={saving} onClick={()=>{if(chatId&&unsaved) void persist(chatId,chatVersion,unsaved);}} className="mt-2 underline">{saving ? (ro?"Se salvează…":"Saving…") : (ro?"Reîncearcă salvarea":"Retry saving")}</button>}</div>}
     {turns.length>=MAX_CHAT_TURNS&&<p className="my-4 text-sm">{ro ? "Această conversație a ajuns la 30 de răspunsuri. Începe una nouă pentru a continua." : "This conversation has reached 30 replies. Start a new chat to continue."}</p>}
     <div ref={answerRegion} role="status" aria-live="polite" aria-busy={pending} className={pending || result ? "answer-region" : ""}>
