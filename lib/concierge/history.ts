@@ -1,8 +1,10 @@
+import { NextStepsSchema } from './next-steps';
 import { z } from 'zod';
 import { safeSourceUrl } from './contracts';
 
 export const MAX_CHAT_TURNS = 30;
 const SavedResultSchema = z.object({
+  nextSteps: NextStepsSchema.optional(),
   answerId: z.uuid().optional(),
   status: z.enum(['answered', 'clarify']),
   message: z.string().max(4000).optional(),

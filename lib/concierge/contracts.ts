@@ -1,3 +1,4 @@
+import type { NextSteps } from "./next-steps";
 import { z } from "zod";
 
 export const PhotoSchema = z.string().max(650_000)
@@ -24,6 +25,7 @@ export type ConciergeRequest = z.infer<typeof RequestSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type Segment = { text: string; sources: { title: string; url: string }[] };
 export type ConciergeResult = {
+  nextSteps?: NextSteps;
   answerId?: string;
   status: "answered" | "clarify" | "error";
   segments: Segment[];
