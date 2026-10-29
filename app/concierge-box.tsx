@@ -6,6 +6,8 @@ import { ChatTranscript } from "./chat-transcript";
 import { saveChatTurn, askSavedConcierge } from "./history-actions";
 import { chatContext, MAX_CHAT_TURNS, type SavedTurn, type SavedChat } from "@/lib/concierge/history";
 import { FeedbackDialog } from "./answer-feedback";
+import { NextSteps, ActionPanel, ActiveTimer } from "./next-steps";
+import type { NextAction } from "@/lib/concierge/next-steps";
 import { PhotoOptions } from "./photo-options";
 import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
@@ -17,6 +19,8 @@ import { Brand, ConciergeMark } from "./ui/brand";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
 
 export function ConciergeBox({ initial, email, isAdmin }: { initial: { language: "en" | "ro"; city: string; locationConfigured: boolean; firstName: string }; email: string; isAdmin: boolean }) {
+  const [activeAction,setActiveAction] = useState<{action:NextAction;title:string}|null>(null);
+  const [activeTimer,setActiveTimer] = useState<{end:number;label:string}|null>(null);
   const liveLocation = useLiveLocation(email);
   const [language, setLanguage] = useState(initial.language);
   const [firstName, setFirstName] = useState(initial.firstName);
@@ -75,6 +79,13 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     return true;
   }
 
+  function runAction(action:NextAction,title:string,sourceQuestion:string) {
+    if(action.type==='followup') {
+      if(question.trim() && !window.confirm(ro?'Înlocuiești întrebarea netrimisă?':'Replace the unsent question?')) return;
+      setQuestion(`${action.prompt}\n${ro?'Referitor la':'Regarding'}: ${title}. ${sourceQuestion}`.slice(0,2000));
+      input.current?.focus();input.current?.scrollIntoView({block:'center',behavior:'smooth'});
+    } else setActiveAction({action,title});
+  }
   function removePhoto() {
     setPhoto(undefined); setPhotoError("");
   }
@@ -140,6 +151,8 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   }
 
   return <div lang={language} className="concierge-shell">
+    {activeAction&&<ActionPanel key={JSON.stringify(activeAction)} {...activeAction} ro={ro} onClose={()=>setActiveAction(null)} onStartTimer={(seconds,label)=>{if(activeTimer&&!window.confirm(ro?'Înlocuiești cronometrul curent?':'Replace the current timer?')) return;setActiveTimer({end:Date.now()+seconds*1000,label});}}/>}
+    {activeTimer&&<ActiveTimer key={activeTimer.end} {...activeTimer} ro={ro} onStop={()=>setActiveTimer(null)}/>}
     <header className="concierge-header">
       <Brand />
       <button type="button" aria-label={ro ? "Deschide meniul" : "Open menu"} aria-expanded={menuOpen} aria-controls="settings-menu" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="icon-button menu-button"><Icon name="menu" /></button>
@@ -157,7 +170,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
 
     {!!turns.length && <div className="mb-4 flex items-center justify-between gap-3 text-xs"><span className="text-muted">{ro ? "Conversație" : "Conversation"} · {turns[0].question.slice(0,65)}</span><button type="button" disabled={pending||saving} onClick={startNew} className="text-brand underline">{ro ? "Conversație nouă" : "New chat"}</button></div>}
-    <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro}/>
+    <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro} disabled={pending||saving||preparingPhoto} onAction={runAction}/>
     {turns.some(turn=>turn.hadPhoto)&&!photo&&<p className="mb-4 text-xs text-muted">{ro ? "Pozele anterioare nu sunt salvate. Atașează din nou poza dacă întrebarea depinde de ea." : "Earlier photos are not saved. Reattach the photo if your follow-up depends on it."}</p>}
     <form onSubmit={submit} className="need-composer">
       <label htmlFor="need" className="sr-only">{ro ? "De ce ai nevoie?" : "What do you need?"}</label>
@@ -198,6 +211,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
         {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
         {result.status === "answered" && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{result.searched ? (ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly.") : (ro ? "Sugestie AI; fără căutare web pentru acest răspuns." : "AI-generated guidance; no web search used for this answer.")}</p>}
+        {result.status==='answered'&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
         {result.plan && <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">{ro ? "Cum a înțeles INeed" : "How INeed understood this"}</summary><p className="mt-2">{result.plan.goal}</p><p>{ro ? "Acesta este un rezumat al cererii, nu raționamentul intern al AI." : "This is a task brief, not the AI’s internal reasoning."}</p></details>}
         {result.status === "answered" && result.answerId && <button type="button" onClick={()=>setFeedbackOpen(true)} className="mt-4 text-xs text-brand underline">{ro ? "Lasă feedback" : "Leave feedback"}</button>}
       </article>}

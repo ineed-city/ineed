@@ -14,13 +14,14 @@ function load(file, mocks = {}, globals = {}) {
   vm.runInNewContext(js, {module:testModule, exports:testModule.exports, require:name => name in mocks ? mocks[name] : require(name), URL, Date, AbortSignal, AbortController, setTimeout, clearTimeout, process:{env:{}}, console:{info(){}}, ...globals}, {filename});
   return testModule.exports;
 }
+const nextSteps = load('lib/concierge/next-steps.ts');
 const contracts = load('lib/concierge/contracts.ts');
 const request = {question:'Find somewhere for tonight',city:'Bucharest, Romania',language:'en',context:[]};
 const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarification:null};
 function service(responses, chosen = plan) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, './next-steps':nextSteps, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -55,7 +56,7 @@ test('search tool error cannot produce unverified recommendations',async()=>{
 });
 test('recipe answer avoids web tools',async()=>{
   const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Cook the rice.'}]}],{...plan,category:'recipe',needsWeb:false});
-  assert.equal((await s.answerNeed(request)).status,'answered');assert.equal(s.calls[0].tools,undefined);
+  assert.equal((await s.answerNeed(request)).status,'answered');assert.equal(s.calls[0].tools.some(t=>t.name==='web_search'),false);
 });
 test('paused search preserves provider blocks and stops after two rounds',async()=>{
   const s=service([{stop_reason:'pause_turn',content:[searched]},{stop_reason:'end_turn',content:[cited]}]);
@@ -106,7 +107,7 @@ test('simple ingredient requests skip planner and web search',async()=>{
   for(const question of ['What can I cook with rice and chickpeas?','Ce pot găti cu orez și năut?']) {
     const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Recipe'}]}]);
     assert.equal((await s.answerNeed({...request,question})).status,'answered');
-    assert.equal(s.planning.length,0);assert.equal(s.calls[0].tools,undefined);
+    assert.equal(s.planning.length,0);assert.equal(s.calls[0].tools.some(t=>t.name==='web_search'),false);
   }
 });
 test('ambiguous, missing-location, follow-up and nonstandard food requests keep planner',()=>{
@@ -263,7 +264,7 @@ test('feedback requires auth, uses authenticated ID and strips photos or posts',
   dbError={code:'unavailable'};assert.equal((await submitFeedback(feedbackReport)).ok,false);
 });
 
-const historyRules=load('lib/concierge/history.ts',{'./contracts':contracts});
+const historyRules=load('lib/concierge/history.ts',{'./contracts':contracts,'./next-steps':nextSteps});
 const historyTurn={id:'550e8400-e29b-41d4-a716-446655440001',question:'Remember that my test project is called Cedar.',result:{status:'answered',answerId:'550e8400-e29b-41d4-a716-446655440002',segments:[{text:'Your test project is Cedar.',sources:[]}]},hadPhoto:false,city:'Bucharest',language:'en'};
 const historyId='550e8400-e29b-41d4-a716-446655440003';
 test('saved turns exclude raw photos and reject unsafe sources or error responses',()=>{
@@ -391,4 +392,35 @@ test('automatic location coalesces concurrent refreshes and recovers from lookup
   assert.equal(await first,'Paris');assert.equal(await second,'Paris');assert.equal(calls,1);
   fail=true;now=61_000;assert.equal(await tracker.refresh(),'');assert.equal(tracker.getSnapshot().status,'unavailable');assert.equal(tracker.getSnapshot().area,'');
   fail=false;const retry=tracker.refresh();resolve('Lyon');assert.equal(await retry,'Lyon');
+});
+
+
+test('next steps reject dangerous links, unsupported capabilities and unbounded payloads',()=>{
+  for(const url of ['javascript:alert(1)','https://127.0.0.1','http://example.com','https://user:pass@example.com','https://internal.local','https://example.com:8443']) assert.equal(nextSteps.publicLink(url),false);
+  for(const action of [{type:'booking',label:'Book'}, {type:'timer',label:'Wait',seconds:-1},{type:'timer',label:'Wait',seconds:90000},{type:'call',label:'Call',phone:'123;456',sourceUrl:'https://example.com'}]) assert.equal(nextSteps.NextActionSchema.safeParse(action).success,false);
+});
+test('external action proposals require actual citation evidence',()=>{
+  const source='https://example.com';
+  const evidence=[{url:source,quote:'Bistro One at Bistro One, 10 Main Street, Paris. Call +33 1 23 45 67 89.'}];
+  const groups=[{title:'Bistro One',actions:[{type:'maps',label:'Maps',destination:'Bistro One, 10 Main Street, Paris',sourceUrl:source},{type:'call',label:'Call',phone:'+33123456789',sourceUrl:source}]}];
+  assert.equal(nextSteps.verifiedSteps({groups},evidence)[0].actions.length,2);
+  assert.equal(nextSteps.verifiedSteps({groups},[]).length,0);
+  groups[0].actions[1].phone='+33123456788';assert.equal(nextSteps.verifiedSteps({groups},evidence)[0].actions.length,1);
+  groups[0].actions[0].sourceUrl='https://evil.example.com';assert.equal(nextSteps.verifiedSteps({groups},evidence).length,0);
+});
+test('recipe actions are returned without extra generation and survive saved history',async()=>{
+  const groups=[{title:'Rice for two',actions:[{type:'checklist',label:'Shopping list',items:['150 g rice','300 ml water']},{type:'timer',label:'Simmer 10 minutes',seconds:600}]}];
+  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Simmer rice for 10 minutes.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups}}]}],{...plan,category:'recipe',needsWeb:false});
+  const result=await s.answerNeed(request);
+  assert.equal(result.nextSteps[0].actions[1].seconds,600);assert.equal(s.calls.length,1);
+  const saved=historyRules.SavedTurnSchema.parse({...historyTurn,result});
+  assert.equal(saved.result.nextSteps[0].actions[0].items.length,2);
+});
+test('malformed action metadata never replaces a valid answer',async()=>{
+  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Cook the rice.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{bad:true}]}}]}],{...plan,category:'recipe',needsWeb:false});
+  const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.nextSteps.length,0);assert.equal(result.segments[0].text,'Cook the rice.');
+});
+test('a tool-only response gets one bounded continuation for the readable answer',async()=>{
+  const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{title:'Practice',actions:[{type:'followup',label:'Practice interview',prompt:'Ask me a practice interview question.'}]}]}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Prepare two examples of your work.'}]}],{...plan,category:'general',needsWeb:false});
+  const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.nextSteps.length,1);assert.equal(s.calls.length,2);
 });
