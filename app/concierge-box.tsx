@@ -6,6 +6,7 @@ import { ChatTranscript } from "./chat-transcript";
 import { saveChatTurn, askSavedConcierge } from "./history-actions";
 import { chatContext, MAX_CHAT_TURNS, type SavedTurn, type SavedChat } from "@/lib/concierge/history";
 import { FeedbackDialog } from "./answer-feedback";
+import { PhotoOptions } from "./photo-options";
 import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
 import { useLiveLocation } from "./use-live-location";
@@ -20,13 +21,14 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   const [language, setLanguage] = useState(initial.language);
   const [firstName, setFirstName] = useState(initial.firstName);
   const [city, setCity] = useState(initial.city);
-  const [locationConfigured, setLocationConfigured] = useState(initial.locationConfigured);
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   const [photo, setPhoto] = useState<string | undefined>();
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const [photoOptionsOpen, setPhotoOptionsOpen] = useState(false);
+  const photoButton = useRef<HTMLButtonElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<SavedTurn[]>([]);
@@ -66,7 +68,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
   async function updatePreferences(patch: { firstName?: string; city?: string; language?: "en" | "ro" }) {
     const saved = await savePreferences(patch).catch(() => ({ok:false}));
     if (!saved.ok) return false;
-    if (patch.city !== undefined) {liveLocation.disable(); setCity(patch.city); setLocationConfigured(true);}
+    if (patch.city !== undefined) {liveLocation.disable(); setCity(patch.city);}
     if (patch.firstName !== undefined) setFirstName(patch.firstName);
     if (patch.language !== undefined) setLanguage(patch.language);
      setPhotoError("");
@@ -151,8 +153,9 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       <h1 className="concierge-title">{ro ? "Orice îți trebuie." : "Whatever you need."}</h1>
       <p className="concierge-subtitle">{ro ? "Spune-ne ce cauți. Găsim următorul pas." : "Tell us what you need. Find your next step."}</p></div>
       <section className="concierge-workspace">
+    {photoOptionsOpen && <PhotoOptions ro={ro} onClose={()=>{setPhotoOptionsOpen(false);photoButton.current?.focus();}} onCamera={()=>{setPhotoOptionsOpen(false);setCameraOpen(true);}} onUpload={()=>{setPhotoOptionsOpen(false);photoButton.current?.focus();fileInput.current?.click();}} />}
     {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
-    {(liveLocation.enabled || !locationConfigured || city) && <button type="button" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="location-chip"><Icon name="pin" /><span>{liveLocation.enabled ? (liveLocation.status === "checking" ? (ro ? "Actualizez zona…" : "Updating area…") : liveLocation.area ? `${liveLocation.area} · ${ro ? "automat" : "automatic"}` : (ro ? "Locație indisponibilă · verifică setările" : "Location unavailable · check settings")) : city || (ro ? "Alege zona ta" : "Set your area")}</span><Icon name="chevron" /></button>}
+
     {!!turns.length && <div className="mb-4 flex items-center justify-between gap-3 text-xs"><span className="text-muted">{ro ? "Conversație" : "Conversation"} · {turns[0].question.slice(0,65)}</span><button type="button" disabled={pending||saving} onClick={startNew} className="text-brand underline">{ro ? "Conversație nouă" : "New chat"}</button></div>}
     <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro}/>
     {turns.some(turn=>turn.hadPhoto)&&!photo&&<p className="mb-4 text-xs text-muted">{ro ? "Pozele anterioare nu sunt salvate. Atașează din nou poza dacă întrebarea depinde de ea." : "Earlier photos are not saved. Reattach the photo if your follow-up depends on it."}</p>}
@@ -177,8 +180,8 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <div className="photo-actions">
           <button type="button" disabled={pending || saving || preparingPhoto} aria-haspopup="dialog" onClick={()=>setFeedbackOpen(true)} className="composer-tool"><Icon name="message" /><span>Feedback</span></button>
           <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
-          <button type="button" disabled={pending || saving || preparingPhoto} onClick={() => fileInput.current?.click()} className="composer-tool" title={ro ? "Adaugă o poză" : "Add a photo"}><Icon name="photo" /><span>{ro ? "Poză" : "Photo"}</span></button>
-          <button type="button" disabled={pending || saving || preparingPhoto} onClick={() => setCameraOpen(true)} className="composer-tool" title={ro ? "Fă o poză" : "Take a photo"}><Icon name="camera" /><span>{ro ? "Cameră" : "Camera"}</span></button>
+          <button ref={photoButton} type="button" disabled={pending || saving || preparingPhoto} aria-haspopup="dialog" onClick={() => setPhotoOptionsOpen(true)} className="composer-tool" title={ro ? "Adaugă o poză" : "Add a photo"}><Icon name="photo" /><span>{ro ? "Poză" : "Photo"}</span></button>
+          <button type="button" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="composer-tool composer-location" title={liveLocation.enabled ? liveLocation.area || (ro ? "Locație automată indisponibilă" : "Automatic location unavailable") : city || (ro ? "Alege orașul" : "Choose city")} aria-label={ro ? "Schimbă locația" : "Change location"}><Icon name="pin" /><span>{liveLocation.enabled ? (liveLocation.status === "checking" ? "…" : liveLocation.area.split(',')[0] || (ro ? "Locație" : "Location")) : city.split(',')[0] || (ro ? "Oraș" : "City")}</span></button>
         </div>
         <button disabled={pending || saving || Boolean(unsaved) || turns.length>=MAX_CHAT_TURNS || preparingPhoto || question.trim().length < 2} type="submit" aria-label={pending ? (ro ? "Se pregătește răspunsul" : "Preparing your answer") : (ro ? "Trimite cererea" : "Send request")} className="send-button">{pending ? <span className="loading-spinner" /> : <Icon name="arrow" />}</button>
       </div>
