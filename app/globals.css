@@ -78,9 +78,10 @@ button:disabled { cursor: default; }
 .has-answer .concierge-intro > .concierge-mark, .has-answer .concierge-eyebrow { display: none; }
 .has-answer .concierge-title { font-size: 32px; }
 .has-answer .concierge-subtitle { margin-top: 10px; font-size: 14px; }
-.settings-panel { position: fixed; inset: 12px 12px 12px auto; margin: 0; width: min(94vw, 420px); max-width: none; height: calc(100dvh - 24px); max-height: none; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #fff; border-radius: 28px; padding: 24px; color: var(--color-ink); background: #f7f8fa; box-shadow: 0 24px 80px #0002; }
+.settings-panel { --panel-padding: 24px; --panel-top-padding: 24px; position: fixed; inset: 12px 12px 12px auto; margin: 0; width: min(94vw, 420px); max-width: none; height: calc(100dvh - 24px); max-height: none; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #fff; border-radius: 28px; padding: var(--panel-top-padding) var(--panel-padding) var(--panel-padding); color: var(--color-ink); background: #f7f8fa; box-shadow: 0 24px 80px #0002; }
 .settings-panel::backdrop { background: #18232140; backdrop-filter: blur(5px); }
-.settings-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+/* Keep dismissal available while long menus scroll, including iOS safe areas. */
+.settings-heading { position: sticky; top: calc(-1 * var(--panel-top-padding)); z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: calc(-1 * var(--panel-top-padding)) calc(-1 * var(--panel-padding)) 24px; padding: var(--panel-top-padding) var(--panel-padding) 16px; background: #f7f8fa; border-bottom: 1px solid var(--color-line); }
 .settings-navigation, .settings-group { padding: 18px; border: 1px solid #eceeef; border-radius: 18px; background: #fff; margin-bottom: 12px; }
 .settings-navigation { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .settings-navigation a { display: flex; align-items: center; justify-content: space-between; min-height: 40px; }
@@ -108,7 +109,7 @@ button:disabled { cursor: default; }
   .suggestion { padding: 8px 10px; font-size: 11px; }
   .suggestion svg { display: none; }
   .answer-card { padding: 20px; font-size: 14px; }
-  .settings-panel { inset: 0 0 0 auto; width: min(100%, 420px); height: 100dvh; border-radius: 24px 0 0 24px; padding: 20px; }
+  .settings-panel { --panel-padding: 20px; --panel-top-padding: max(20px, env(safe-area-inset-top)); inset: 0 0 0 auto; width: min(100%, 420px); height: 100dvh; border-radius: 24px 0 0 24px; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
   .has-answer { padding-top: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
