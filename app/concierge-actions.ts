@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { answerNeed } from "@/lib/concierge/answer";
 import { RequestSchema, type ConciergeResult } from "@/lib/concierge/contracts";
 
+import { readPreferences } from "@/lib/concierge/preferences";
+
 // Best-effort pilot guard per server instance. Not a distributed billing cap.
 const usage = new Map<string, { count: number; expires: number; busy: boolean }>();
 
@@ -13,8 +15,8 @@ export async function askConcierge(raw: unknown): Promise<ConciergeResult> {
   const ro = parsed.data.language === "ro";
   try {
     const db = await createClient();
-    const { data } = await db.auth.getClaims();
-    const id = data?.claims?.sub;
+    const { data, error } = await db.auth.getUser();
+    const id = error ? undefined : data.user?.id;
     if (!id) return { status: "error", segments: [], message: ro ? "Intră din nou în cont." : "Please sign in again." };
     const now = Date.now();
     for (const [key, item] of usage) if (item.expires <= now) usage.delete(key);
@@ -22,7 +24,7 @@ export async function askConcierge(raw: unknown): Promise<ConciergeResult> {
     if (entry.busy || entry.count >= 15) return { status: "error", segments: [], message: ro ? "Ai atins limita pilotului. Încearcă mai târziu." : "Pilot request limit reached. Please try again later." };
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("AI not configured");
     entry.count++; entry.busy = true; usage.set(id, entry);
-    try { return { ...await answerNeed(parsed.data), answerId: crypto.randomUUID() }; }
+    try { return { ...await answerNeed(parsed.data, readPreferences(data.user?.user_metadata).firstName), answerId: crypto.randomUUID() }; }
     finally { entry.busy = false; }
   } catch (error) {
     console.error("concierge failed", error instanceof Error ? error.name : "UnknownError");

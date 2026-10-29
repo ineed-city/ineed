@@ -5,21 +5,23 @@ import { useEffect, useRef, useState } from 'react';
 import { signOut } from './auth/actions';
 import { detectArea } from '@/lib/concierge/location';
 
-export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave, onAddContext, onHistory, onNewChat }: {
-  language: 'en' | 'ro'; city: string; email: string; isAdmin: boolean;
+export function SettingsMenu({ firstName, language, city, email, isAdmin, onClose, onSave, onAddContext, onHistory, onNewChat }: {
+  firstName: string; language: 'en' | 'ro'; city: string; email: string; isAdmin: boolean;
   onAddContext: () => void; onHistory: () => void; onNewChat: () => void;
-  onClose: () => void; onSave: (patch: { city?: string; language?: 'en' | 'ro' }) => Promise<boolean>;
+  onClose: () => void; onSave: (patch: { firstName?: string; city?: string; language?: 'en' | 'ro' }) => Promise<boolean>;
 }) {
   const ro = language === 'ro';
   const dialog = useRef<HTMLDialogElement>(null);
   const active = useRef(true);
+  const [nameDraft, setNameDraft] = useState(firstName);
+  const [nameStatus, setNameStatus] = useState<'saved' | 'failed' | ''>('');
   const [draft, setDraft] = useState(city);
   const locationRequest = useRef<AbortController | null>(null);
   const [locating, setLocating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<'saved' | 'removed' | 'failed' | 'detected' | 'denied' | 'timeout' | 'unsupported' | 'locationError' | ''>('');
   useEffect(() => {active.current = true; dialog.current?.showModal(); return () => {active.current = false; locationRequest.current?.abort();};}, []);
-  async function save(patch: { city?: string; language?: 'en' | 'ro' }) {
+  async function save(patch: { firstName?: string; city?: string; language?: 'en' | 'ro' }) {
     if (busy) return;
     cancelLocation();
     setBusy(true); setMessage('');
@@ -29,6 +31,15 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave, 
       if (ok && patch.city !== undefined) setDraft(patch.city);
       setBusy(false);
     }
+  }
+  async function saveName() {
+    if (busy) return;
+    setBusy(true); setNameStatus('');
+    try {
+      const ok = await onSave({firstName:nameDraft.trim()});
+      if (active.current) {setNameStatus(ok ? 'saved' : 'failed'); if (ok) setNameDraft(nameDraft.trim());}
+    } catch { if (active.current) setNameStatus('failed'); }
+    finally { if (active.current) setBusy(false); }
   }
   function cancelLocation() {
     locationRequest.current?.abort();
@@ -89,6 +100,12 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave, 
       <details className="text-xs text-muted"><summary className="cursor-pointer">{ro ? 'Revocă permisiunea browserului' : 'Revoke browser permission'}</summary><p className="mt-2">{ro ? 'Aplicația nu poate revoca permisiuni în browser. Deschide pictograma de setări de lângă adresa site-ului → Permisiuni/Setări site → Locație → Blochează sau Resetează. Pe telefon, verifică și setările de localizare ale browserului. Eliminarea locației salvate oprește folosirea ei în INeed.' : 'The app cannot revoke browser permissions. Open the settings icon beside the website address → Permissions/Site settings → Location → Block or Reset. On a phone, also check the browser’s location settings. Removing the saved location stops INeed using it.'}</p></details>
     </section>
     <details className="settings-group text-xs text-muted"><summary className="cursor-pointer">{ro ? 'Confidențialitate și despre INeed' : 'Privacy & about INeed'}</summary><p className="mt-3">{ro ? 'Întrebările, răspunsurile, sursele și textul atașat sunt salvate privat în cont pentru a redeschide conversațiile. Pozele nu sunt stocate; atașează-le din nou când este necesar. Cererea, conținutul distribuit și poza ajung la Claude. Dacă trimiți feedback, evaluarea, comentariul, întrebarea și textul răspunsului sunt salvate pentru echipa INeed. Pozele și postările atașate nu sunt salvate cu feedbackul, dar răspunsul poate cita detalii din ele. Răspunsurile pot fi greșite; verifică sursele. Nu contactăm furnizori și nu facem rezervări în locul tău.' : 'Chat questions, answers, source links and shared text are saved privately to your account so you can reopen conversations. Photos are not stored; reattach them when needed. Your request, shared content and attached photo go to Claude. If you submit feedback, its rating, comment, question and answer text are saved for the INeed team. Photos and attached posts are not saved with feedback, but the answer may quote details from them. Answers can be wrong; check the sources. We do not contact providers or make bookings for you.'}</p></details>
-    <section className="settings-group space-y-4 text-sm"><h3 className="font-medium">{ro ? 'Contul meu' : 'My account'}</h3><p className="break-all text-xs text-muted">{email}</p><Link href="/cont/parola" className="block">{ro ? 'Schimbă parola' : 'Change password'}</Link><form action={signOut}><button type="submit">{ro ? 'Ieși din cont' : 'Sign out'}</button></form></section>
+    <section className="settings-group space-y-4 text-sm"><h3 className="font-medium">{ro ? 'Contul meu' : 'My account'}</h3><p className="break-all text-xs text-muted">{email}</p>
+      <form onSubmit={event=>{event.preventDefault();void saveName();}} className="space-y-3">
+        <label className="block">{ro ? 'Prenume (opțional)' : 'First name (optional)'}<input autoComplete="given-name" value={nameDraft} maxLength={50} disabled={busy} onChange={event=>{setNameDraft(event.target.value);setNameStatus('');}} className="mt-2 w-full rounded-lg border border-line bg-white p-2" /></label>
+        <p className="text-xs text-muted">{ro ? 'Cum să-ți spun? Salvăm prenumele în cont și îl trimitem către Claude pentru răspunsuri mai personale. Lasă câmpul gol și salvează pentru a-l elimina.' : 'What should I call you? Your first name is saved to your account and shared with Claude for more personal replies. Leave it blank and save to remove it.'}</p>
+        <button type="submit" disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-white disabled:opacity-50">{ro ? 'Salvează prenumele' : 'Save first name'}</button>
+        <p role="status" className="text-xs text-brand">{nameStatus === 'saved' ? (ro ? 'Preferința a fost salvată pentru răspunsurile viitoare.' : 'Saved for future replies.') : nameStatus === 'failed' ? (ro ? 'Nu am putut salva. Folosește cel mult 50 de caractere: litere, spații, apostrof sau cratimă.' : 'Couldn’t save. Use up to 50 characters: letters, spaces, apostrophes or hyphens.') : ''}</p>
+      </form><Link href="/cont/parola" className="block">{ro ? 'Schimbă parola' : 'Change password'}</Link><form action={signOut}><button type="submit">{ro ? 'Ieși din cont' : 'Sign out'}</button></form></section>
   </dialog>;
 }

@@ -14,8 +14,9 @@ import { Icon } from "./ui/icons";
 import { Brand, ConciergeMark } from "./ui/brand";
 import type { ConciergeResult } from "@/lib/concierge/contracts";
 
-export function ConciergeBox({ initial, email, isAdmin }: { initial: { language: "en" | "ro"; city: string; locationConfigured: boolean }; email: string; isAdmin: boolean }) {
+export function ConciergeBox({ initial, email, isAdmin }: { initial: { language: "en" | "ro"; city: string; locationConfigured: boolean; firstName: string }; email: string; isAdmin: boolean }) {
   const [language, setLanguage] = useState(initial.language);
+  const [firstName, setFirstName] = useState(initial.firstName);
   const [city, setCity] = useState(initial.city);
   const [locationConfigured, setLocationConfigured] = useState(initial.locationConfigured);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,10 +61,11 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
 
   const exampleLabels = ro ? ["Ajutor acasă", "Ce gătesc?", "Unde ieșim?"] : ["Help at home", "Something to cook", "Somewhere to go"];
 
-  async function updatePreferences(patch: { city?: string; language?: "en" | "ro" }) {
+  async function updatePreferences(patch: { firstName?: string; city?: string; language?: "en" | "ro" }) {
     const saved = await savePreferences(patch).catch(() => ({ok:false}));
     if (!saved.ok) return false;
     if (patch.city !== undefined) {setCity(patch.city); setLocationConfigured(true);}
+    if (patch.firstName !== undefined) setFirstName(patch.firstName);
     if (patch.language !== undefined) setLanguage(patch.language);
      setPhotoError("");
     return true;
@@ -137,12 +139,12 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       <Brand />
       <button type="button" aria-label={ro ? "Deschide meniul" : "Open menu"} aria-expanded={menuOpen} aria-controls="settings-menu" disabled={pending || saving || preparingPhoto} onClick={() => setMenuOpen(true)} className="icon-button menu-button"><Icon name="menu" /></button>
     </header>
-    {menuOpen && <SettingsMenu language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onHistory={()=>{setMenuOpen(false);setHistoryOpen(true);}} onNewChat={startNew} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
+    {menuOpen && <SettingsMenu firstName={firstName} language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onHistory={()=>{setMenuOpen(false);setHistoryOpen(true);}} onNewChat={startNew} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
     {historyOpen && <HistoryDialog ro={ro} onClose={()=>setHistoryOpen(false)} onOpen={openConversation} onNew={startNew} />}
     {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
     <main className={`concierge-main ${result || pending ? "has-answer" : ""}`}>
       <div className="concierge-intro"><ConciergeMark />
-      <p className="concierge-eyebrow">{ro ? "Concierge-ul tău de zi cu zi" : "Your everyday concierge"}</p>
+      <p className="concierge-eyebrow">{ro ? "Ajutorul tău de zi cu zi" : "Your everyday helper"}</p>
       <h1 className="concierge-title">{ro ? "Orice îți trebuie." : "Whatever you need."}</h1>
       <p className="concierge-subtitle">{ro ? "Spune-ne ce cauți. Găsim următorul pas." : "Tell us what you need. Find your next step."}</p></div>
       <section className="concierge-workspace">
