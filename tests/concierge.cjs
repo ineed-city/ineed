@@ -22,7 +22,7 @@ const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarific
 function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -458,7 +458,7 @@ test('reviewed local corrections match the city, area and need, expire, and neve
 });
 
 test('reviewed sources reach the model and their citations support maps and calls',async()=>{
-  const input={...request,question:'Caut farmacie zona Blocuri Campia Turzii'};
+  const input={...request,question:'Verifica farmacia din zona Blocuri Campia Turzii'};
   const reviewDate=new Date('2026-10-29T12:00:00Z');
   const sources=localCorrections.reviewedLocalSources(input,plan,reviewDate);
   const title='Catena Gheorghe Baritiu 59';
@@ -476,7 +476,7 @@ test('reviewed sources reach the model and their citations support maps and call
 test('model cannot turn arbitrary source citations into reviewed facts',async()=>{
   const reviewDate=new Date('2026-10-29T12:00:00Z');
   const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Fake listing',citations:[{type:'search_result_location',source:'https://fake.example',search_result_index:0,start_block_index:0,end_block_index:1,cited_text:'fake'}]}]}],plan,{reviewDate});
-  const result=await s.answerNeed({...request,question:'Caut farmacie zona Blocuri Campia Turzii'});
+  const result=await s.answerNeed({...request,question:'Verifica farmacia din zona Blocuri Campia Turzii'});
   assert.equal(result.status,'error');
 });
 
@@ -487,4 +487,25 @@ test('a resolved street follow-up retains the task destination instead of the de
   const sources=localCorrections.reviewedLocalSources(input,resolved,new Date('2026-10-29T12:00:00Z'));
   assert.equal(sources.length,2);
   assert.equal(localCorrections.reviewedLocalSources(input,{...resolved,goal:'Find a pharmacy on Gheorghe Baritiu in Orsova'},new Date('2026-10-29T12:00:00Z')).length,0);
+});
+
+
+test('basic neighborhood lookup returns the reviewed branch with map and phone without answer generation',async()=>{
+  const reviewDate=new Date('2026-10-29T12:00:00Z');
+  const s=service([],plan,{reviewDate});
+  const result=await s.answerNeed({...request,question:'Caut o farmacie in zona Blocuri din Campia Turzii. Ce optiuni am in acea zona?',language:'ro'});
+  assert.equal(s.calls.length,0);assert.equal(result.status,'answered');assert.equal(result.searched,false);
+  assert.match(result.segments[0].text,/Catena Gheorghe Baritiu 59/);
+  assert.equal(result.nextSteps[0].actions[0].type,'maps');
+  assert.equal(result.nextSteps[0].actions[1].phone,'+40755011335');
+  assert.match(result.segments[0].sources[0].url,/catena.ro/);
+});
+
+test('reviewed directory does not substitute for hours, stock, access, distance, exclusions or medical advice',()=>{
+  const now=new Date('2026-10-29T12:00:00Z');
+  for(const ending of ['deschisa acum','cu rampa de acces','cu medicamentul X in stoc','nu Catena','cea mai apropiata','cu livrare','de garda']) {
+    const result=localCorrections.reviewedLocalAnswer({...request,question:`Caut o farmacie in zona Blocuri Campia Turzii ${ending}`},plan,now);
+    assert.equal(result,null);
+  }
+  assert.equal(localCorrections.reviewedLocalAnswer({...request,question:'Caut o farmacie in zona Blocuri Campia Turzii'},plan,new Date('2026-11-28')),null);
 });
