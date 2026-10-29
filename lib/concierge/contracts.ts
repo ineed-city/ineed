@@ -28,6 +28,7 @@ export const PlanSchema = z.object({
   goal: z.string(),
   category: z.enum(["local", "recipe", "howto", "research", "general"]),
   needsWeb: z.boolean(),
+  requiresWebsiteCheck: z.boolean().optional(),
   clarification: z.string().nullable(),
   mapSearch: z.object({
     businessName: z.string().max(160).nullable().optional(),
@@ -49,6 +50,7 @@ export type Segment = { text: string; sources: { title: string; url: string }[] 
 export type ConciergeResult = {
   placeNotes?: Record<string, {description?:string;review?:{text:string;author:string;authorUrl?:string;avatar?:string;url:string;date?:string;visit?:string}} >;
   mapData?: boolean;
+  mapEmpty?: boolean;
   nextSteps?: NextSteps;
   answerId?: string;
   status: "answered" | "clarify" | "error";

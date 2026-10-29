@@ -703,3 +703,30 @@ test('missing or malformed review details do not remove a valid business',()=>{
  const rows=maps.parsePlaces({places:[{...pharmacy,editorialSummary:null,reviews:[{}, {text:{text:'No author'}}],outdoorSeating:null}]});
  assert.equal(rows.length,1);assert.equal(rows[0].reviews.length,0);assert.equal(rows[0].editorialSummary,undefined);
 });
+
+test('menu-specific requests bypass map-only results and require web menu evidence',async()=>{
+ const menuPlan={...mapPlan,requiresWebsiteCheck:true,goal:'Find ramen in Bucharest'};
+ assert.equal(await maps.mapAnswer(request,menuPlan,()=>{throw Error('must use website research');}),null);
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}],menuPlan);
+ const result=await s.answerNeed({...request,question:'Restaurant cu ramen bun in Bucharest'});
+ assert.equal(result.status,'answered');
+ assert.match(s.calls[0].system,/An Asian\/Japanese label is not proof of ramen/);
+ assert.equal(s.calls[0].tools.find(t=>t.name==='web_search').max_uses,4);
+});
+test('zero map matches trigger web research rather than a dead end',async()=>{
+ const empty=await maps.mapAnswer({...request,city:'Campia Turzii'},{...mapPlan,mapSearch:{landmark:null,landmarkType:null,placeType:'restaurant',query:'ramen'}},async()=>({ok:true,json:async()=>({places:[]})}));
+ assert.equal(empty.mapEmpty,true);
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}],plan,{mapResult:empty});
+ const result=await s.answerNeed(request);
+ assert.equal(result.status,'answered');assert.equal(result.message,undefined);
+ assert.match(s.calls[0].system,/no matching listings/);
+});
+test('unverified menu answer is replaced with honest next steps, never fabricated restaurants',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[searched,{type:'text',text:'Invented Ramen Shop has ramen'}]}],{...plan,requiresWebsiteCheck:true});
+ const result=await s.answerNeed({...request,question:'ramen restaurant in Bucharest'});
+ assert.equal(result.status,'answered');
+ assert.ok(!JSON.stringify(result.segments).includes('Invented Ramen'));
+ assert.match(result.segments[0].text,/couldn.t confirm/);
+ assert.equal(result.nextSteps[0].actions.length,2);
+ assert.equal(result.nextSteps[0].actions[1].type,'copy');
+});

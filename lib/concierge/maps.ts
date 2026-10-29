@@ -101,7 +101,7 @@ const mapUrl=(p:z.infer<typeof Place>)=>`https://www.google.com/maps/search/?api
 export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof fetch=fetch):Promise<ConciergeResult|null> {
   const search=plan.mapSearch;
   const key=process.env.GOOGLE_MAPS_API_KEY || '';
-  if(!key || !search || plan.category!=='local' || input.photo || input.shared || !input.city.trim()) return null;
+  if(plan.requiresWebsiteCheck || !key || !search || plan.category!=='local' || input.photo || input.shared || !input.city.trim()) return null;
   const ro=input.language==='ro';
   const signal=AbortSignal.timeout(15_000);
   async function lookup(method:'searchText'|'searchNearby',body:Record<string,unknown>,phone=false) {
@@ -145,6 +145,7 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
     places=places.filter(p=>p.businessStatus!=='CLOSED_PERMANENTLY'&&p.businessStatus!=='CLOSED_TEMPORARILY');
     if(origin && !anchor) places.sort((a,b)=>distanceMeters(origin,a.location)-distanceMeters(origin,b.location));
     places=places.slice(0,businessName?1:5);
+    if(!places.length) return {status:'error',mapEmpty:true,plan,segments:[]};
     const segments:ConciergeResult['segments']=[];
     if(origin && !anchor) segments.push({text:ro?'În apropierea locației tale actuale, în raza de 5 km:':'Near your current location, within 5 km:',sources:[]});
     else if(!anchor) segments.push({text:ro?`Rezultate în ${input.city}. Pentru distanțe față de tine, activează localizarea automată din meniu.`:`Results in ${input.city}. Enable automatic location in the menu for distances from you.`,sources:[]});
