@@ -12,7 +12,7 @@ export const RequestSchema = z.object({
   question: z.string().trim().min(2).max(2000),
   city: z.string().trim().max(100),
   language: z.enum(["en", "ro"]),
-  context: z.array(z.string().max(4000)).max(4),
+  context: z.array(z.string().max(4000)).max(30),
 });
 export const PlanSchema = z.object({
   goal: z.string(),
