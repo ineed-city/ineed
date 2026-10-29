@@ -11,7 +11,41 @@ const Place = z.object({
   businessStatus:z.string().optional(), types:z.array(z.string()).optional(),
   attributions:z.array(z.object({provider:z.string(),providerUri:z.string().optional()})).optional(),
 });
-const Response = z.object({places:z.array(Place).default([])});
+const Response = z.object({places:z.array(z.unknown()).default([])});
+const Component = z.object({longText:z.string().optional(),shortText:z.string().optional(),types:z.array(z.string()).default([])});
+const Attribution = z.object({provider:z.string(),providerUri:z.string().optional()});
+
+// Google's field mask requests fields; it does not guarantee each listing or
+// address component contains them. One incomplete listing must not erase others.
+export function parsePlaces(raw:unknown):z.infer<typeof Place>[] {
+  const response=Response.parse(raw);
+  const places=response.places.flatMap(item=>{
+    if(!item || typeof item!=='object') return [];
+    const record=item as Record<string,unknown>;
+    const components=Array.isArray(record.addressComponents)?record.addressComponents.flatMap(c=>{
+      const parsed=Component.safeParse(c);
+      if(!parsed.success) return [];
+      const longText=parsed.data.longText || parsed.data.shortText;
+      return longText?[{longText,types:parsed.data.types}]:[];
+    }):[];
+    const attributions=Array.isArray(record.attributions)?record.attributions.flatMap(a=>{
+      const parsed=Attribution.safeParse(a);return parsed.success?[parsed.data]:[];
+    }):[];
+    const parsed=Place.safeParse({...record,addressComponents:components,attributions,
+      internationalPhoneNumber:typeof record.internationalPhoneNumber==='string'?record.internationalPhoneNumber:undefined,
+      googleMapsUri:typeof record.googleMapsUri==='string'?record.googleMapsUri:undefined,
+      businessStatus:typeof record.businessStatus==='string'?record.businessStatus:undefined,
+      types:Array.isArray(record.types)?record.types.filter(t=>typeof t==='string'):[],
+    });
+    if(!parsed.success) {
+      console.info('maps listing omitted',JSON.stringify(parsed.error.issues.map(i=>({path:i.path.join('.'),code:i.code}))));
+      return [];
+    }
+    return [parsed.data];
+  });
+  if(response.places.length && !places.length) throw new Error('Maps invalid listings');
+  return places;
+}
 const normalize=(s:string)=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 // Conservative typo tolerance: a single changed character in a distinctive
 // landmark word, never an unrestricted fuzzy match across cities.
@@ -35,7 +69,7 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
   async function lookup(method:'searchText'|'searchNearby',body:Record<string,unknown>,phone=false) {
     const response=await fetcher(`https://places.googleapis.com/v1/places:${method}`,{method:'POST',cache:'no-store',signal,headers:{'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':fields+(phone?',places.internationalPhoneNumber':'')},body:JSON.stringify({...body,languageCode:input.language})});
     if(!response.ok) throw new Error(`Maps HTTP ${response.status}`);
-    return Response.parse(await response.json()).places;
+    return parsePlaces(await response.json());
   }
   try {
     let anchor:z.infer<typeof Place>|undefined;
@@ -67,7 +101,7 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
       return {title:p.displayName.text.slice(0,60),actions};
     })};
   } catch(error) {
-    console.info('maps lookup unavailable',error instanceof Error && /^Maps HTTP \d+$/.test(error.message)?error.message:'timeout or invalid response');
+    console.info('maps lookup unavailable',error instanceof Error && /^Maps (HTTP \d+|invalid listings)$/.test(error.message)?error.message:error instanceof z.ZodError?'invalid envelope':error instanceof Error?error.name:'unknown');
     // Do not quietly turn an unavailable map lookup into fake nearby results.
     return {status:'error',segments:[],message:ro?'Nu pot consulta harta acum. Încearcă din nou în câteva momente.':'I can’t check the map right now. Please try again shortly.'};
   }
