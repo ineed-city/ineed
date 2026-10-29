@@ -7,7 +7,6 @@ export function NextSteps({groups,ro,disabled,onAction}:{groups?:Steps;ro:boolea
   const parsed=NextStepsSchema.safeParse(groups);
   if(!parsed.success || !parsed.data.length) return null;
   return <section className="next-steps" aria-label={ro?'Pașii următori':'Next steps'}>
-    <p className="text-xs font-medium text-muted">{ro?'Ce poți face mai departe':'Your next step'}</p>
     {parsed.data.map((group,index)=><div key={index} className="next-step-group">
       <h3 className="text-sm font-medium">{group.title}</h3>
       <div className="next-step-buttons">{group.actions.map((action,i)=>{
