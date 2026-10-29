@@ -25,12 +25,13 @@ const contains = (text:string, phrase:string) => ` ${text} `.includes(` ${normal
 
 export function reviewedLocalSources(input:ConciergeRequest, plan:Plan, now = new Date()):BetaSearchResultBlockParam[] {
   if(plan.category !== 'local' || input.shared || input.photo) return [];
-  // Require the city and sub-area in the CURRENT question. Never let an old chat
-  // or the device's city inject a business into a request about another place.
+  // Match the current request or its resolved task brief, including follow-up
+  // landmarks. Do not directly scan raw history or use the device city as a match.
   const question = normalize(input.question);
+  const resolved = normalize(plan.goal);
   const date = now.toISOString().slice(0,10);
   return corrections.filter(entry => date >= entry.reviewedAt && date < entry.expiresAt &&
-    contains(question,entry.city) && entry.areas.some(area=>contains(question,area)) &&
+    (contains(question,entry.city) || contains(resolved,entry.city)) && entry.areas.some(area=>contains(question,area) || contains(resolved,area)) &&
     entry.needs.some(need=>contains(question,need) || contains(normalize(plan.goal),need)))
     .flatMap(entry=>entry.sources.map(source=>({
       type:'search_result' as const, source:source.source, title:source.title,

@@ -479,3 +479,12 @@ test('model cannot turn arbitrary source citations into reviewed facts',async()=
   const result=await s.answerNeed({...request,question:'Caut farmacie zona Blocuri Campia Turzii'});
   assert.equal(result.status,'error');
 });
+
+
+test('a resolved street follow-up retains the task destination instead of the device city',()=>{
+  const input={...request,question:'Gheorghe Baritiu',city:'Orsova'};
+  const resolved={...plan,goal:'Find a pharmacy on Gheorghe Baritiu in Campia Turzii for the same task'};
+  const sources=localCorrections.reviewedLocalSources(input,resolved,new Date('2026-10-29T12:00:00Z'));
+  assert.equal(sources.length,2);
+  assert.equal(localCorrections.reviewedLocalSources(input,{...resolved,goal:'Find a pharmacy on Gheorghe Baritiu in Orsova'},new Date('2026-10-29T12:00:00Z')).length,0);
+});
