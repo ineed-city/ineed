@@ -16,7 +16,7 @@ const normalize=(s:string)=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').to
 // Conservative typo tolerance: a single changed character in a distinctive
 // landmark word, never an unrestricted fuzzy match across cities.
 function nameMatches(requested:string, actual:string) {
-  const words=normalize(requested).split(' ').filter(w=>!['parc','parcul','park','municipal','the','station','gara','strada','street'].includes(w));
+  const words=normalize(requested).split(' ').filter(w=>!['parc','parcul','parcului','park','municipal','the','station','gara','strada','street'].includes(w));
   const names=normalize(actual).split(' ');
   return words.length>0 && words.every(w=>names.some(n=>w===n || (w.length>=4 && w.length===n.length && [...w].filter((c,i)=>c!==n[i]).length===1)));
 }
@@ -41,7 +41,7 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
     let anchor:z.infer<typeof Place>|undefined;
     let places:z.infer<typeof Place>[];
     if(search.landmark) {
-      const candidates=await lookup('searchText',{textQuery:`${search.landmark}, ${input.city}`,pageSize:3});
+      const candidates=await lookup('searchText',{textQuery:`${search.landmark.replace(/\bparcului\b/gi, 'parcul')}, ${input.city}`,pageSize:3});
       // A city mismatch or ambiguous landmark must never silently select a place.
       const matches=candidates.filter(p=>sameCity(p,input.city) && nameMatches(search.landmark!,p.displayName.text) && (!search.landmarkType || p.types?.includes(search.landmarkType)));
       if(matches.length!==1) return {status:'clarify',plan,segments:[],message:ro?`Nu pot identifica sigur „${search.landmark}” în ${input.city}. Îmi dai strada sau un link Google Maps al reperului?`:`I can’t reliably identify “${search.landmark}” in ${input.city}. What street is it on, or can you share its Google Maps link?`};

@@ -542,7 +542,7 @@ test('follow-up destination can use a previous user request',()=>{
 const maps=load('lib/concierge/maps.ts',{'server-only':{}},{process:{env:{GOOGLE_MAPS_API_KEY:'test-secret'}}});
 const park={id:'park-1',displayName:{text:'Parcul Municipal Berc'},formattedAddress:'Câmpia Turzii, Romania',location:{latitude:46.55,longitude:23.88},types:['park'],addressComponents:[{longText:'Câmpia Turzii',types:['locality']}]};
 const pharmacy={...park,id:'pharmacy-1',displayName:{text:'Test pharmacy'},types:['pharmacy'],internationalPhoneNumber:'+40 123 456 789'};
-const mapPlan={...plan,mapSearch:{landmark:'Parcul Berg',landmarkType:'park',placeType:'pharmacy',query:'farmacie'}};
+const mapPlan={...plan,mapSearch:{landmark:'parcului Berg',landmarkType:'park',placeType:'pharmacy',query:'farmacie'}};
 test('map search resolves the landmark then searches around actual coordinates',async()=>{
   const calls=[];
   const fetcher=async(url,options)=>{calls.push({url,...options,body:JSON.parse(options.body)});return {ok:true,json:async()=>({places:calls.length===1?[park]:[pharmacy]})};};
