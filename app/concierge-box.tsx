@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { HistoryDialog } from "./history-dialog";
+import { PlaceResults } from "./place-results";
 import { ChatTranscript } from "./chat-transcript";
 import { saveChatTurn, askSavedConcierge } from "./history-actions";
 import { chatContext, MAX_CHAT_TURNS, type SavedTurn, type SavedChat } from "@/lib/concierge/history";
@@ -221,10 +222,10 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <p className="chat-question mb-4 whitespace-pre-wrap break-words">{answeredQuestion}</p>
         <div className="answer-label"><ConciergeMark /><span>{ro ? "Pentru tine" : "For you"}</span></div>
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
-        {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
+        {result.mapData ? <PlaceResults result={result} ro={ro}/> : result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
         {result.mapData && <p className="mt-3 text-xs text-muted">{ro ? 'Rezultatele hărții sunt temporare; poți repeta căutarea din Istoric.' : 'Map listings are temporary; repeat the search from History to refresh them.'}</p>}
         {result.status === "answered" && result.searched && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly."}</p>}
-        {result.status==='answered'&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
+        {result.status==='answered'&&!result.mapData&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
         {result.plan && <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">{ro ? "Cum a înțeles INeed" : "How INeed understood this"}</summary><p className="mt-2">{result.plan.goal}</p><p>{ro ? "Acesta este un rezumat al cererii, nu raționamentul intern al AI." : "This is a task brief, not the AI’s internal reasoning."}</p></details>}
         {result.status === "answered" && result.answerId && <button type="button" onClick={()=>setFeedbackOpen(true)} className="mt-4 text-xs text-brand underline">{ro ? "Lasă feedback" : "Leave feedback"}</button>}
       </article>}
