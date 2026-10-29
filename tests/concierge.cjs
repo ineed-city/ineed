@@ -27,7 +27,7 @@ const cited={type:'text',text:'An option from an official site.',citations:[{typ
 const searched={type:'web_search_tool_result',content:[]};
 test('rejects oversized inputs, invalid languages and excessive context',()=>{
   assert.equal(contracts.RequestSchema.safeParse(request).success,true);
-  for(const change of [{question:' '},{question:'x'.repeat(2001)},{language:'xx'},{context:Array(5).fill('x')}]) assert.equal(contracts.RequestSchema.safeParse({...request,...change}).success,false);
+  for(const change of [{question:' '},{question:'x'.repeat(2001)},{language:'xx'},{context:Array(31).fill('x')}]) assert.equal(contracts.RequestSchema.safeParse({...request,...change}).success,false);
 });
 test('citation links reject script schemes, credentials and local addresses',()=>{
   for(const url of ['javascript:alert(1)','data:text/html,x','https://user:pass@example.com','http://127.0.0.1','http://localhost']) assert.equal(contracts.safeSourceUrl(url),null);
@@ -261,4 +261,61 @@ test('feedback requires auth, uses authenticated ID and strips photos or posts',
   assert.equal((await submitFeedback({...feedbackReport,user_id:'another-user',photo:'private',shared:{text:'private'}})).ok,true);
   assert.equal(captured.user_id,id);assert.equal(captured.photo,undefined);assert.equal(captured.shared,undefined);
   dbError={code:'unavailable'};assert.equal((await submitFeedback(feedbackReport)).ok,false);
+});
+
+const historyRules=load('lib/concierge/history.ts',{'./contracts':contracts});
+const historyTurn={id:'550e8400-e29b-41d4-a716-446655440001',question:'Remember that my test project is called Cedar.',result:{status:'answered',answerId:'550e8400-e29b-41d4-a716-446655440002',segments:[{text:'Your test project is Cedar.',sources:[]}]},hadPhoto:false,city:'Bucharest',language:'en'};
+const historyId='550e8400-e29b-41d4-a716-446655440003';
+test('saved turns exclude raw photos and reject unsafe sources or error responses',()=>{
+  const saved=historyRules.SavedTurnSchema.parse({...historyTurn,photo:'base64-secret',user_id:'other'});
+  assert.equal(saved.photo,undefined);assert.equal(saved.user_id,undefined);
+  assert.equal(historyRules.SavedTurnSchema.safeParse({...historyTurn,result:{status:'error',segments:[]}}).success,false);
+  assert.equal(historyRules.SavedTurnSchema.safeParse({...historyTurn,result:{status:'answered',segments:[{text:'x',sources:[{title:'unsafe',url:'javascript:alert(1)'}]}]}}).success,false);
+});
+test('restored conversation context includes prior questions, answers and missing-photo reminder',()=>{
+  const context=historyRules.chatContext([{...historyTurn,hadPhoto:true},historyTurn]);
+  assert.match(context[0],/Cedar/);assert.match(context[0],/photo was attached/);
+  assert.equal(context.length,2);
+  assert.equal(contracts.RequestSchema.safeParse({...request,context}).success,true);
+  assert.equal(historyRules.chatContext(Array(40).fill(historyTurn)).length,30);
+  assert.ok(historyRules.chatContext([{...historyTurn,question:'q'.repeat(2000),result:{status:'answered',segments:[{text:'a'.repeat(20000),sources:[]}]}}])[0].length<=4000);
+});
+function historyActions(authId, response={data:[],error:null}) {
+  const calls=[];
+  const query={select(...args){calls.push(['select',...args]);return this;},eq(...args){calls.push(['eq',...args]);return this;},order(){return this;},range(){return Promise.resolve(response);},single(){return Promise.resolve(response);}};
+  const db={auth:{getClaims:async()=>({data:{claims:authId?{sub:authId}:null}})},from:()=>query,rpc:async(name,params)=>{calls.push(['rpc',name,params]);return response;}};
+  return {...load('app/history-actions.ts',{'@/lib/supabase/server':{createClient:async()=>db},'@/lib/concierge/history':historyRules,'@/lib/concierge/contracts':contracts,'./concierge-actions':{askConcierge:async()=>historyTurn.result}}),calls};
+}
+test('history read and write actions reject signed-out requests',async()=>{
+  const h=historyActions(null);
+  assert.equal((await h.listChats()).ok,false);
+  assert.equal((await h.loadChat(historyId)).ok,false);
+  assert.equal((await h.saveChatTurn({id:historyId,version:0,turn:historyTurn})).ok,false);
+  assert.equal(h.calls.length,0);
+});
+test('history listing and opening always scope queries to the signed-in owner',async()=>{
+  const h=historyActions('owner',{data:{id:historyId,title:'Cedar',version:1,updated_at:'2026-10-29T10:00:00Z',turns:[historyTurn]},error:null});
+  assert.equal((await h.loadChat(historyId)).ok,true);
+  assert.ok(h.calls.some(c=>c[0]==='eq'&&c[1]==='user_id'&&c[2]==='owner'));
+  const list=historyActions('owner');await list.listChats();assert.ok(list.calls.some(c=>c[0]==='eq'&&c[1]==='user_id'&&c[2]==='owner'));
+});
+test('history writes use the versioned RPC and surface conflicts instead of overwriting',async()=>{
+  const h=historyActions('owner',{data:1,error:null});
+  assert.equal((await h.saveChatTurn({id:historyId,version:0,turn:{...historyTurn,photo:'private'}})).version,1);
+  assert.equal(h.calls[0][1],'append_concierge_turn');assert.equal(h.calls[0][2].p_turn.photo,undefined);
+  const stale=historyActions('owner',{data:null,error:{code:'40001'}});
+  assert.equal((await stale.saveChatTurn({id:historyId,version:0,turn:historyTurn})).conflict,true);
+  assert.equal((await h.saveChatTurn({id:'invalid',version:0,turn:historyTurn})).ok,false);
+});
+test('saved concierge persists the answer before returning and excludes the photo',async()=>{
+  const h=historyActions('owner',{data:1,error:null});
+  const result=await h.askSavedConcierge({...request,photo:'data:image/jpeg;base64,/9j/AAAA'}, {id:historyId,version:0,turnId:historyTurn.id});
+  assert.equal(result.saved.ok,true);assert.equal(result.turn.hadPhoto,true);
+  assert.equal(h.calls.filter(c=>c[0]==='rpc').length,1);
+  assert.equal(h.calls.find(c=>c[0]==='rpc')[2].p_turn.photo,undefined);
+});
+test('reopening an unavailable or stale chat does not append a new answer',async()=>{
+  const h=historyActions('owner',{data:null,error:{code:'not_found'}});
+  const result=await h.askSavedConcierge(request,{id:historyId,version:1,turnId:historyTurn.id});
+  assert.equal(result.answer.status,'error');assert.equal(h.calls.filter(c=>c[0]==='rpc').length,0);
 });
