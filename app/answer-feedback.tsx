@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { submitFeedback } from './feedback-actions';
 
 export function AnswerFeedback({answerId, question, answer, language}: {
@@ -29,4 +29,16 @@ export function AnswerFeedback({answerId, question, answer, language}: {
       </div>}
     </form>}
   </section>;
+}
+
+export function FeedbackDialog({report, language, onClose}: {
+  report:{answerId:string; question:string; answer:string}|null; language:'en'|'ro'; onClose:()=>void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const ro = language === 'ro';
+  useEffect(()=>{dialog.current?.showModal();},[]);
+  return <dialog ref={dialog} aria-labelledby="feedback-title" onCancel={e=>{e.preventDefault();onClose();}} className="settings-panel">
+    <div className="settings-heading"><h2 id="feedback-title" className="text-xl font-medium">Feedback</h2><button type="button" onClick={onClose} aria-label={ro ? 'Închide feedbackul' : 'Close feedback'} className="icon-button">×</button></div>
+    {report ? <><p className="mt-4 text-sm text-muted">{ro ? 'Despre ultimul răspuns la:' : 'About the latest answer to:'}</p><p className="mt-2 text-sm break-words">{report.question}</p><AnswerFeedback {...report} language={language}/></> : <p className="mt-4 text-sm">{ro ? 'Pune mai întâi o întrebare. După ce primești răspunsul, revino aici pentru a trimite feedback.' : 'Ask a question first. Once you receive an answer, come back here to send feedback.'}</p>}
+  </dialog>;
 }
