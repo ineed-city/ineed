@@ -22,7 +22,7 @@ const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarific
 function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './maps':{mapAnswer:async()=>null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -537,4 +537,46 @@ test('follow-up destination can use a previous user request',()=>{
   const p={...plan,destination:{city:'Campia Turzii',source:'context',clarificationReason:'none'}};
   const input={...request,question:'Near the park',city:'Orsova',context:['User: Find a pharmacy in Campia Turzii\nArea at the time: Orsova\nPrevious response (recheck current facts): Which area?']};
   assert.equal(contracts.resolveDestination(input,p).city,'Campia Turzii');
+});
+
+const maps=load('lib/concierge/maps.ts',{'server-only':{}},{process:{env:{GOOGLE_MAPS_API_KEY:'test-secret'}}});
+const park={id:'park-1',displayName:{text:'Parcul Municipal Berc'},formattedAddress:'Câmpia Turzii, Romania',location:{latitude:46.55,longitude:23.88},types:['park'],addressComponents:[{longText:'Câmpia Turzii',types:['locality']}]};
+const pharmacy={...park,id:'pharmacy-1',displayName:{text:'Test pharmacy'},types:['pharmacy'],internationalPhoneNumber:'+40 123 456 789'};
+const mapPlan={...plan,mapSearch:{landmark:'Parcul Berg',landmarkType:'park',placeType:'pharmacy',query:'farmacie'}};
+test('map search resolves the landmark then searches around actual coordinates',async()=>{
+  const calls=[];
+  const fetcher=async(url,options)=>{calls.push({url,...options,body:JSON.parse(options.body)});return {ok:true,json:async()=>({places:calls.length===1?[park]:[pharmacy]})};};
+  const result=await maps.mapAnswer({...request,city:'Campia Turzii'},mapPlan,fetcher);
+  assert.equal(calls.length,2); assert.equal(calls[0].cache,'no-store');
+  assert.equal(calls[1].body.locationRestriction.circle.center.latitude,46.55);
+  assert.equal(calls[1].body.rankPreference,'DISTANCE');
+  assert.equal(calls[1].headers['X-Goog-Api-Key'],'test-secret');
+  assert.equal(result.mapData,true); assert.equal(result.nextSteps[0].actions[1].type,'call');
+  assert.match(result.nextSteps[0].actions[0].url,/query_place_id=pharmacy-1/);
+  assert.match(result.segments[0].text,/Berc/);
+  assert.ok(!JSON.stringify(calls).includes(request.question));
+});
+test('wrong city, wrong landmark type and ambiguous map matches stop nearby lookup',async()=>{
+  for(const candidates of [[{...park,addressComponents:[{longText:'Orșova',types:['locality']}]}],[{...park,types:['factory']}],[park,{...park,id:'park-2'}],[]]) {
+    let calls=0;
+    const result=await maps.mapAnswer({...request,city:'Campia Turzii'},mapPlan,async()=>{calls++;return {ok:true,json:async()=>({places:candidates})};});
+    assert.equal(result.status,'clarify');assert.equal(calls,1);
+  }
+});
+test('map failure never fabricates a nearby result',async()=>{
+  const result=await maps.mapAnswer({...request,city:'Campia Turzii'},mapPlan,async()=>({ok:false,status:403}));
+  assert.equal(result.status,'error'); assert.equal(result.segments.length,0);
+});
+test('map adapter skips unavailable credentials and unsupported tasks',async()=>{
+  const noKey=load('lib/concierge/maps.ts',{'server-only':{}},{fetch:()=>{throw Error('unexpected')}});
+  assert.equal(await noKey.mapAnswer(request,mapPlan),null);
+  assert.equal(await maps.mapAnswer(request,{...plan,mapSearch:null},()=>{throw Error('unexpected')}),null);
+});
+test('history strips Google listings and keeps a refresh action',()=>{
+  const raw={id:'11111111-1111-4111-8111-111111111111',question:'Find a pharmacy by the park',city:'Campia Turzii',language:'en',hadPhoto:false,result:{status:'answered',mapData:true,segments:[{text:'Provider listing not to store',sources:[{title:'Google Maps',url:'https://www.google.com/maps'}]}],nextSteps:[{title:'Provider name',actions:[{type:'call',label:'Call',phone:'+40123456789',sourceUrl:'https://www.google.com/maps'}]}]}};
+  const parsed=historyRules.SavedTurnSchema.parse(raw);
+  assert.ok(!JSON.stringify(parsed).includes('Provider'));
+  assert.ok(!JSON.stringify(parsed).includes('+40123456789'));
+  assert.equal(parsed.result.nextSteps[0].actions[0].prompt,raw.question);
+  assert.ok(!historyRules.chatContext([raw])[0].includes('Provider'));
 });

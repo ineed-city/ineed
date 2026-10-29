@@ -171,7 +171,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     </header>
     {menuOpen && <SettingsMenu liveLocation={liveLocation} firstName={firstName} language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onHistory={()=>{setMenuOpen(false);setHistoryOpen(true);}} onNewChat={startNew} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
     {historyOpen && <HistoryDialog ro={ro} onClose={()=>setHistoryOpen(false)} onOpen={openConversation} onNew={startNew} />}
-    {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
+    {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.mapData ? "Map lookup (listing content not retained)" : result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
     <main className={`concierge-main ${result || pending ? "has-answer" : ""}`}>
       <div className="concierge-intro"><ConciergeMark />
       <p className="concierge-eyebrow">{ro ? "Ajutorul tău de zi cu zi" : "Your everyday helper"}</p>
@@ -212,7 +212,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       </div>
       {preparingPhoto && <p role="status" className="text-xs text-muted">{ro ? "Pregătesc poza…" : "Preparing photo…"}</p>}
     </form>
-    <p className="composer-privacy">{ro ? "Textul conversației și linkurile sunt salvate în Istoric. Pozele nu sunt salvate. Cererile sunt procesate de Claude." : "Chat text and links are saved to History. Photos are not saved. Requests are processed by Claude."}</p>
+    <p className="composer-privacy">{ro ? "Textul conversației și linkurile sunt salvate în Istoric. Pozele nu sunt salvate. Cererile sunt procesate de Claude. Căutările pe hartă trimit locul și categoria către Google." : "Chat text and links are saved to History. Photos are not saved. Requests are processed by Claude. Map searches send the place and category to Google."}</p>
     {saveIssue && <div role="alert" className="my-4 text-sm text-red-800"><p>{saveIssue === "conflict" ? (ro ? "Conversația a fost modificată în altă filă. Acest răspuns nu a fost salvat. Copiază-l înainte să redeschizi conversația din Istoric." : "This chat changed in another tab. This answer was not saved. Copy it before reopening the conversation from History.") : (ro ? "Răspunsul nu a fost salvat în Istoric. Reîncearcă înainte să închizi pagina." : "This answer wasn’t saved to History. Retry before closing the page.")}</p>{saveIssue === "failed" && <button type="button" disabled={saving} onClick={()=>{if(chatId&&unsaved) void persist(chatId,chatVersion,unsaved);}} className="mt-2 underline">{saving ? (ro?"Se salvează…":"Saving…") : (ro?"Reîncearcă salvarea":"Retry saving")}</button>}</div>}
     {turns.length>=MAX_CHAT_TURNS&&<p className="my-4 text-sm">{ro ? "Această conversație a ajuns la 30 de răspunsuri. Începe una nouă pentru a continua." : "This conversation has reached 30 replies. Start a new chat to continue."}</p>}
     <div ref={answerRegion} role="status" aria-live="polite" aria-busy={pending} className={pending || result ? "answer-region" : ""}>
@@ -222,6 +222,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <div className="answer-label"><ConciergeMark /><span>{ro ? "Pentru tine" : "For you"}</span></div>
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
         {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
+        {result.mapData && <p className="mt-3 text-xs text-muted">{ro ? 'Rezultatele hărții sunt temporare; poți repeta căutarea din Istoric.' : 'Map listings are temporary; repeat the search from History to refresh them.'}</p>}
         {result.status === "answered" && result.searched && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly."}</p>}
         {result.status==='answered'&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
         {result.plan && <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">{ro ? "Cum a înțeles INeed" : "How INeed understood this"}</summary><p className="mt-2">{result.plan.goal}</p><p>{ro ? "Acesta este un rezumat al cererii, nu raționamentul intern al AI." : "This is a task brief, not the AI’s internal reasoning."}</p></details>}
@@ -234,6 +235,6 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     </div>}
       </section>
     </main>
-    <footer className="concierge-footer">{ro ? "Versiune de test · AI poate greși. Verifică sursele." : "Private pilot · AI can be mistaken. Check sources."}</footer>
+    <footer className="concierge-footer">{ro ? "Versiune de test · AI poate greși. Verifică sursele." : "Private pilot · AI can be mistaken. Check sources."} <a href="/privacy" className="underline">{ro?"Confidențialitate":"Privacy"}</a> · <a href="/terms" className="underline">{ro?"Termeni":"Terms"}</a></footer>
   </div>;
 }

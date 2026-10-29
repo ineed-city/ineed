@@ -20,6 +20,12 @@ export const PlanSchema = z.object({
   category: z.enum(["local", "recipe", "howto", "research", "general"]),
   needsWeb: z.boolean(),
   clarification: z.string().nullable(),
+  mapSearch: z.object({
+    landmark: z.string().max(160).nullable(),
+    landmarkType: z.enum(['park','train_station','shopping_mall','hospital']).nullable(),
+    placeType: z.enum(['pharmacy','restaurant','cafe','supermarket','hospital','gas_station','lodging','car_repair','bakery','dentist','veterinary_care','atm']),
+    query: z.string().min(2).max(180),
+  }).nullable().optional(),
   // Literal location text, not a model-invented address or normalized alias.
   destination: z.object({
     city: z.string().max(100),
@@ -31,6 +37,7 @@ export type ConciergeRequest = z.infer<typeof RequestSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type Segment = { text: string; sources: { title: string; url: string }[] };
 export type ConciergeResult = {
+  mapData?: boolean;
   nextSteps?: NextSteps;
   answerId?: string;
   status: "answered" | "clarify" | "error";
@@ -55,7 +62,7 @@ export function safeSourceUrl(value: string): string | null {
 export function quickPlan(input: ConciergeRequest): Plan | null {
   if (input.shared || input.photo || input.context.length || input.question.length > 240) return null;
   const q = input.question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (input.city.trim() && !/\b(in|din|la|near|around|langa|zona)\b/.test(q) && /\b(plumber|handyman|restaurant|restaurants|cafe|cafes|electrician|instalator|restaurante|cafenea)\b/.test(q)) {
+  if (!process.env.GOOGLE_MAPS_API_KEY && input.city.trim() && !/\b(in|din|la|near|around|langa|zona)\b/.test(q) && /\b(plumber|handyman|restaurant|restaurants|cafe|cafes|electrician|instalator|restaurante|cafenea)\b/.test(q)) {
     return { goal: input.question, category: "local", needsWeb: true, clarification: null };
   }
   // Restrict the no-search shortcut to ordinary ingredient-only requests.
