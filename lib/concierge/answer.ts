@@ -1,5 +1,5 @@
 import "server-only";
-import { reviewedLocalSources, LOCAL_CORRECTION_INSTRUCTIONS } from './local-corrections';
+import { reviewedLocalSources, reviewedLocalAnswer, LOCAL_CORRECTION_INSTRUCTIONS } from './local-corrections';
 import { z } from 'zod';
 import { PresentationSchema, verifiedSteps, NEXT_STEPS_INSTRUCTIONS, type ActionEvidence } from './next-steps';
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
@@ -37,6 +37,8 @@ Context contains earlier user requests and responses from this conversation, whi
   console.info("concierge planning", JSON.stringify({ fast, ms: Date.now() - started }));
   if (!plan) throw new Error("No task brief");
   if (plan.clarification) return { status: "clarify", plan, segments: [], message: plan.clarification };
+  const directoryAnswer = reviewedLocalAnswer(input, plan);
+  if(directoryAnswer) return directoryAnswer;
   const needsWeb = Boolean(input.shared?.url) || plan.needsWeb || plan.category === "local" || plan.category === "research";
   const localSources = reviewedLocalSources(input, plan);
   const messages: BetaMessageParam[] = [{...userMessage, content:[
