@@ -41,9 +41,10 @@ Context contains earlier user requests and responses from this conversation, whi
   const segments: Segment[] = [];
   const evidence: ActionEvidence[] = [];
   let proposed: unknown;
+  let actionsPrepared = false;
   let searched = false;
   let searchFailed = false;
-  for (let round = 0; round < 2; round++) {
+  for (let round = 0; round < 3; round++) {
     const response = await anthropic.beta.messages.create({
       model: process.env.CONCIERGE_MODEL || ANSWER_MODEL,
       // Search reasoning shares the output budget with the visible answer.
@@ -63,6 +64,7 @@ ${needsWeb ? "You MUST search the web before recommending any real business, pla
 Never invent businesses, reviews, prices, proximity, opening times, qualifications or availability. Do not call options best or vetted. Explain relevance using actual evidence. A business website is not proof of quality. Search listings do not establish availability; ask the user to confirm directly. Distinguish original suggestions from verified facts.
 No booking, contact, payment or submission tools exist. Never claim an action was taken. Do not ask for personal contact details. If the current city field is empty, do not reuse a location from earlier turns as the current location. Use the selected search area for nearby requests unless the user explicitly names another location. Treat it as approximate; do not claim precise distances or closest ranking without verified geographic evidence.
 Do not provide dangerous DIY instructions. For immediate danger, prioritize appropriate urgent help. For technical security-product questions requiring exact model instructions, direct to the Manuals tool rather than inventing steps.`,
+      ...(actionsPrepared ? {tool_choice:{type:"none" as const}} : {}),
       tools: [
         ...(needsWeb ? [{ type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 2 }] : []),
         {name:'present_next_steps',description:'Present actionable buttons after the answer; does not execute actions.',input_schema:z.toJSONSchema(PresentationSchema) as {type:'object';properties:Record<string,unknown>}},
@@ -85,9 +87,13 @@ Do not provide dangerous DIY instructions. For immediate danger, prioritize appr
       });
       segments.push({ text: block.text, sources });
     }
-    if (response.stop_reason === 'tool_use' && !segments.some(s=>s.text.trim())) {
+    if (response.stop_reason === 'tool_use' && !actionsPrepared) {
+      actionsPrepared = true;
+      // Client-tool calls are an intermediate handoff, not a complete answer.
+      // Discard pre-tool narration and request a complete final answer.
+      segments.length = 0;
       messages.push({role:'assistant',content:response.content});
-      messages.push({role:'user',content:response.content.flatMap(b=>b.type==='tool_use'?[{type:'tool_result' as const,tool_use_id:b.id,content:'Actions prepared. Now provide the concise answer with citations as needed. Do not call present_next_steps again.'}]:[])});
+      messages.push({role:'user',content:response.content.flatMap(b=>b.type==='tool_use'?[{type:'tool_result' as const,tool_use_id:b.id,content:'Actions prepared for display only; nothing has been executed. Now write the COMPLETE final answer from the beginning, with all instructions, quantities and durations needed. Include citations from the search evidence when applicable. Do not repeat tool metadata or call tools again.'}]:[])});
       continue;
     }
     if (response.stop_reason === "pause_turn") {

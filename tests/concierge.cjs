@@ -58,12 +58,12 @@ test('recipe answer avoids web tools',async()=>{
   const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Cook the rice.'}]}],{...plan,category:'recipe',needsWeb:false});
   assert.equal((await s.answerNeed(request)).status,'answered');assert.equal(s.calls[0].tools.some(t=>t.name==='web_search'),false);
 });
-test('paused search preserves provider blocks and stops after two rounds',async()=>{
+test('paused search preserves provider blocks and stops after three rounds',async()=>{
   const s=service([{stop_reason:'pause_turn',content:[searched]},{stop_reason:'end_turn',content:[cited]}]);
   assert.equal((await s.answerNeed(request)).status,'answered');assert.equal(s.calls.length,2);
   assert.equal(s.calls[1].messages[1].content[0],searched);
-  const stuck=service([{stop_reason:'pause_turn',content:[]},{stop_reason:'pause_turn',content:[]}]);
-  await assert.rejects(stuck.answerNeed(request),/timed out/);assert.equal(stuck.calls.length,2);
+  const stuck=service([{stop_reason:'pause_turn',content:[]},{stop_reason:'pause_turn',content:[]},{stop_reason:'pause_turn',content:[]}]);
+  await assert.rejects(stuck.answerNeed(request),/timed out/);assert.equal(stuck.calls.length,3);
 });
 test('truncated and refused answers are not presented as complete',async()=>{
   for(const stop_reason of ['max_tokens','refusal']) {
@@ -408,16 +408,16 @@ test('external action proposals require actual citation evidence',()=>{
   groups[0].actions[1].phone='+33123456788';assert.equal(nextSteps.verifiedSteps({groups},evidence)[0].actions.length,1);
   groups[0].actions[0].sourceUrl='https://evil.example.com';assert.equal(nextSteps.verifiedSteps({groups},evidence).length,0);
 });
-test('recipe actions are returned without extra generation and survive saved history',async()=>{
+test('recipe actions receive a complete final answer and survive saved history',async()=>{
   const groups=[{title:'Rice for two',actions:[{type:'checklist',label:'Shopping list',items:['150 g rice','300 ml water']},{type:'timer',label:'Simmer 10 minutes',seconds:600}]}];
-  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Simmer rice for 10 minutes.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups}}]}],{...plan,category:'recipe',needsWeb:false});
+  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Simmer rice for 10 minutes.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Simmer rice for 10 minutes, then let it rest for 5 minutes.'}]}],{...plan,category:'recipe',needsWeb:false});
   const result=await s.answerNeed(request);
-  assert.equal(result.nextSteps[0].actions[1].seconds,600);assert.equal(s.calls.length,1);
+  assert.equal(result.nextSteps[0].actions[1].seconds,600);assert.equal(s.calls.length,2);assert.equal(result.segments[0].text,'Simmer rice for 10 minutes, then let it rest for 5 minutes.');assert.equal(s.calls[1].tool_choice.type,'none');
   const saved=historyRules.SavedTurnSchema.parse({...historyTurn,result});
   assert.equal(saved.result.nextSteps[0].actions[0].items.length,2);
 });
 test('malformed action metadata never replaces a valid answer',async()=>{
-  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Cook the rice.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{bad:true}]}}]}],{...plan,category:'recipe',needsWeb:false});
+  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Cook the rice.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{bad:true}]}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Cook the rice.'}]}],{...plan,category:'recipe',needsWeb:false});
   const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.nextSteps.length,0);assert.equal(result.segments[0].text,'Cook the rice.');
 });
 test('a tool-only response gets one bounded continuation for the readable answer',async()=>{
