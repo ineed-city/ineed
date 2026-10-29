@@ -83,7 +83,14 @@ export async function mapAnswer(input:ConciergeRequest,plan:Plan,fetcher:typeof 
       places=await lookup('searchNearby',{includedTypes:[search.placeType],maxResultCount:10,rankPreference:'DISTANCE',locationRestriction:{circle:{center:anchor.location,radius:1500}}},true);
     } else {
       places=await lookup('searchText',{textQuery:`${search.query}, ${input.city}`,includedType:search.placeType,strictTypeFiltering:true,pageSize:5},true);
-      places=places.filter(p=>sameCity(p,input.city));
+      places=places.filter(p=>sameCity(p,input.city) && p.businessStatus!=='CLOSED_PERMANENTLY' && p.businessStatus!=='CLOSED_TEMPORARILY');
+      // Listings may be tagged as hair_care or beauty_salon rather than
+      // hair_salon. Retry the same public query without the strict type filter,
+      // but never relax the city boundary or the user's requested service.
+      if(!places.length) {
+        places=await lookup('searchText',{textQuery:`${search.query}, ${input.city}`,pageSize:10},true);
+        places=places.filter(p=>sameCity(p,input.city));
+      }
     }
     places=places.filter(p=>search.placeType!=='pharmacy' || !/\b(fito farmacie|fitofarmacie|fitosanitara|farmacie veterinara|veterinary pharmacy)\b/.test(normalize(p.displayName.text)));
     places=places.filter(p=>p.businessStatus!=='CLOSED_PERMANENTLY'&&p.businessStatus!=='CLOSED_TEMPORARILY').slice(0,3);

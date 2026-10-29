@@ -23,7 +23,7 @@ export const PlanSchema = z.object({
   mapSearch: z.object({
     landmark: z.string().max(160).nullable(),
     landmarkType: z.enum(['park','train_station','shopping_mall','hospital']).nullable(),
-    placeType: z.enum(['pharmacy','restaurant','cafe','supermarket','hospital','gas_station','lodging','car_repair','bakery','dentist','veterinary_care','atm']),
+    placeType: z.enum(['pharmacy','restaurant','cafe','supermarket','hospital','gas_station','lodging','car_repair','bakery','dentist','veterinary_care','atm','hair_salon','hair_care','barber_shop','beauty_salon','nail_salon','plumber','electrician','locksmith','florist','laundry']),
     query: z.string().min(2).max(180),
   }).nullable().optional(),
   // Literal location text, not a model-invented address or normalized alias.
