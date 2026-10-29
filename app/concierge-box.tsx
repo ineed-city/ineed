@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnswerFeedback } from "./answer-feedback";
+import { FeedbackDialog } from "./answer-feedback";
 import { CameraDialog } from "./camera-dialog";
 import { preparePhoto } from "@/lib/concierge/photo";
 import { SettingsMenu } from "./settings-menu";
@@ -33,6 +33,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [pending]);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [sharedText, setSharedText] = useState("");
   const [sharedUrl, setSharedUrl] = useState("");
@@ -89,7 +90,8 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       <Brand />
       <button type="button" aria-label={ro ? "Deschide meniul" : "Open menu"} aria-expanded={menuOpen} aria-controls="settings-menu" disabled={pending || preparingPhoto} onClick={() => setMenuOpen(true)} className="icon-button menu-button"><Icon name="menu" /></button>
     </header>
-    {menuOpen && <SettingsMenu language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} />}
+    {menuOpen && <SettingsMenu language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
+    {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
     <main className={`concierge-main ${result || pending ? "has-answer" : ""}`}>
       <div className="concierge-intro"><ConciergeMark />
       <p className="concierge-eyebrow">{ro ? "Concierge-ul tău de zi cu zi" : "Your everyday concierge"}</p>
@@ -109,7 +111,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <button type="button" disabled={pending || preparingPhoto} onClick={removePhoto} className="text-brand underline">{ro ? "Elimină poza" : "Remove photo"}</button>
       </div>}
       {shareOpen && <section id="share-recommendation" className="share-panel">
-        <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-medium">{ro ? "Distribuie în INeed" : "Share with INeed"}</h2><button type="button" disabled={pending} onClick={()=>{setShareOpen(false);setSharedText("");setSharedUrl("");setContext([]);setResult(null);}} className="text-xs underline">{ro ? "Elimină" : "Remove"}</button></div>
+        <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-medium">{ro ? "Adaugă context" : "Add context"}</h2><button type="button" disabled={pending} onClick={()=>{setShareOpen(false);setSharedText("");setSharedUrl("");setContext([]);setResult(null);}} className="text-xs underline">{ro ? "Elimină" : "Remove"}</button></div>
         <p className="text-xs text-muted">{ro ? "Adaugă o recomandare, o postare sau o captură de ecran cu butonul Poză. Scrie mai sus ce vrei să afli." : "Add a recommendation, post, or screenshot using Photo. Tell us above what you want to know."}</p>
         <label className="block text-xs">{ro ? "Link către sursă (opțional)" : "Source link (optional)"}<input type="url" value={sharedUrl} maxLength={2000} disabled={pending} onChange={e=>{setSharedUrl(e.target.value);setContext([]);setResult(null);}} placeholder="https://…" className="shared-input mt-2" /></label>
         <label className="block text-xs">{ro ? "Textul postării sau recomandării (opțional)" : "Post or recommendation text (optional)"}<textarea value={sharedText} maxLength={6000} rows={4} disabled={pending} onChange={e=>{setSharedText(e.target.value);setContext([]);setResult(null);}} className="shared-input mt-2" /></label>
@@ -117,7 +119,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
       </section>}
       <div className="composer-toolbar">
         <div className="photo-actions">
-          <button type="button" disabled={pending || preparingPhoto} aria-expanded={shareOpen} aria-controls="share-recommendation" onClick={()=>setShareOpen(true)} className="composer-tool"><Icon name="link" /><span>{ro ? "Distribuie" : "Share"}</span></button>
+          <button type="button" disabled={pending || preparingPhoto} aria-haspopup="dialog" onClick={()=>setFeedbackOpen(true)} className="composer-tool"><Icon name="message" /><span>Feedback</span></button>
           <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => {const file = e.target.files?.[0]; e.target.value = ""; void attachPhoto(file);}} />
           <button type="button" disabled={pending || preparingPhoto} onClick={() => fileInput.current?.click()} className="composer-tool" title={ro ? "Adaugă o poză" : "Add a photo"}><Icon name="photo" /><span>{ro ? "Poză" : "Photo"}</span></button>
           <button type="button" disabled={pending || preparingPhoto} onClick={() => setCameraOpen(true)} className="composer-tool" title={ro ? "Fă o poză" : "Take a photo"}><Icon name="camera" /><span>{ro ? "Cameră" : "Camera"}</span></button>
@@ -135,7 +137,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         {result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
         {result.status === "answered" && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{result.searched ? (ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly.") : (ro ? "Sugestie AI; fără căutare web pentru acest răspuns." : "AI-generated guidance; no web search used for this answer.")}</p>}
         {result.plan && <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">{ro ? "Cum a înțeles INeed" : "How INeed understood this"}</summary><p className="mt-2">{result.plan.goal}</p><p>{ro ? "Acesta este un rezumat al cererii, nu raționamentul intern al AI." : "This is a task brief, not the AI’s internal reasoning."}</p></details>}
-        {result.status === "answered" && result.answerId && <AnswerFeedback key={result.answerId} answerId={result.answerId} question={answeredQuestion} answer={result.segments.map(s=>s.text).join("").slice(0,16000)} language={language} />}
+        {result.status === "answered" && result.answerId && <button type="button" onClick={()=>setFeedbackOpen(true)} className="mt-4 text-xs text-brand underline">{ro ? "Lasă feedback" : "Leave feedback"}</button>}
       </article>}
     </div>
     {!context.length && !pending && <div className="suggestions">{examples.map((example, index) => <button key={example} title={example} onClick={() => {setQuestion(example);input.current?.focus();}} className="suggestion"><Icon name={index === 0 ? "home" : index === 1 ? "cook" : "place"} />{exampleLabels[index]}</button>)}</div>}

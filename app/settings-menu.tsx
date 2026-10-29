@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from 'react';
 import { signOut } from './auth/actions';
 import { detectArea } from '@/lib/concierge/location';
 
-export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave }: {
+export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave, onAddContext }: {
   language: 'en' | 'ro'; city: string; email: string; isAdmin: boolean;
+  onAddContext: () => void;
   onClose: () => void; onSave: (patch: { city?: string; language?: 'en' | 'ro' }) => Promise<boolean>;
 }) {
   const ro = language === 'ro';
@@ -64,6 +65,7 @@ export function SettingsMenu({ language, city, email, isAdmin, onClose, onSave }
   return <dialog ref={dialog} id="settings-menu" aria-labelledby="settings-title" onCancel={event=>{event.preventDefault();onClose();}} className="settings-panel">
     <div className="settings-heading"><h2 id="settings-title" className="text-xl font-medium">{ro ? 'Meniu' : 'Menu'}</h2><button type="button" aria-label={ro ? 'Închide meniul' : 'Close menu'} onClick={onClose} className="icon-button"><Icon name="close" /></button></div>
     <nav className="settings-navigation" aria-label={ro ? 'Navigare' : 'Navigation'}>
+      <button type="button" onClick={onAddContext} className="flex w-full items-center justify-between py-3 text-sm">{ro ? "Adaugă context · postare sau link" : "Add context · post or link"}<Icon name="link" /></button>
       <Link href="/manuals">{ro ? 'Manuale și produse' : 'Manuals & products'} <Icon name="chevron" /></Link>
       {isAdmin && <Link href="/admin/feedback">{ro ? 'Feedback răspunsuri' : 'Answer feedback'} <Icon name="chevron" /></Link>}
       {isAdmin && <Link href="/admin">{ro ? 'Administrare' : 'Administration'} <Icon name="chevron" /></Link>}
