@@ -424,3 +424,21 @@ test('a tool-only response gets one bounded continuation for the readable answer
   const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{title:'Practice',actions:[{type:'followup',label:'Practice interview',prompt:'Ask me a practice interview question.'}]}]}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Prepare two examples of your work.'}]}],{...plan,category:'general',needsWeb:false});
   const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.nextSteps.length,1);assert.equal(s.calls.length,2);
 });
+
+test('local search preserves explicit destination and neighborhood through planning and answering',async()=>{
+  const localPlan={goal:'Find a pharmacy in Riverside, Exampletown',category:'local',needsWeb:true,clarification:null};
+  const s=service([{stop_reason:'end_turn',content:[searched,cited]}],localPlan);
+  const result=await s.answerNeed({...request,question:'Where can I find a pharmacy in Riverside, Exampletown?',city:'Another city'});
+  assert.equal(result.status,'answered');
+  assert.match(s.planning[0].system,/explicit destination in the current question takes priority over the city field/);
+  assert.match(s.planning[0].system,/Preserve every explicit city, neighborhood, street and landmark/);
+  const system=s.calls[0].system;
+  assert.match(system,/use the remaining search to check branch addresses/);
+  assert.match(system,/Do not silently replace a neighborhood request with city-wide recommendations/);
+  assert.match(system,/stock is unconfirmed, not that a shop does not sell the product/);
+  assert.match(system,/Do not assume an ambiguous phrase/);
+  assert.equal(s.calls[0].tools[0].max_uses,2);
+  const payload=JSON.parse(s.calls[0].messages[0].content[0].text);
+  assert.equal(payload.question,'Where can I find a pharmacy in Riverside, Exampletown?');
+  assert.equal(payload.city,'Another city');
+});
