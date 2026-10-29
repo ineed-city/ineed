@@ -2,22 +2,33 @@ import type { ConciergeResult } from '@/lib/concierge/contracts';
 import { safeSourceUrl } from '@/lib/concierge/contracts';
 
 /** Keep each provider listing and its actions together, including older turns. */
-export function PlaceResults({result,ro}:{result:Pick<ConciergeResult,'segments'|'nextSteps'>;ro:boolean}) {
+export function PlaceResults({result,ro}:{result:Pick<ConciergeResult,'segments'|'nextSteps'|'placeNotes'>;ro:boolean}) {
   const groups=result.nextSteps || [];
   const listings=groups.map(group=>{
     const link=group.actions.find(a=>a.type==='website');
     const segment=link?.type==='website' ? result.segments.find(s=>s.sources.some(source=>source.url===link.url)) : undefined;
     const [name,address,...details]=(segment?.text.trim() || group.title).split('\n');
-    return {group,segment,name,address:address?.trim(),details:details.filter(Boolean)};
+    return {group,segment,name,note:link?.type==='website'?result.placeNotes?.[link.url]:undefined,address:address?.trim(),details:details.filter(Boolean)};
   });
   const attribution=result.segments.at(-1);
   const introduction=result.segments.filter(s=>s!==attribution&&!listings.some(l=>l.segment===s));
   return <section className="place-results" aria-label={ro?'Locuri găsite':'Places found'}>
     {introduction.map((s,i)=><p key={i} className="place-intro">{s.text.trim()}</p>)}
-    <div className="place-list">{listings.map(({group,name,address,details},i)=><article className="place-card" key={i}>
+    <div className="place-list">{listings.map(({group,name,address,details,note},i)=><article className="place-card" key={i}>
       <h3 className="place-name">{name}</h3>
       {address&&<p className="place-address">{address}</p>}
+      {note?.description&&<p className="place-description">{note.description}</p>}
       {details.map((detail,j)=><p key={j} className="place-detail">{detail}</p>)}
+      {note?.review&&<blockquote className="place-review">
+        <p>„{note.review.text}”</p>
+        <footer>
+          {/* eslint-disable-next-line @next/next/no-img-element -- Transient provider attribution; do not cache Google avatar. */}
+          {note.review.avatar&&safeSourceUrl(note.review.avatar)&&<img src={note.review.avatar} width="24" height="24" alt="" referrerPolicy="no-referrer" />}
+          <a href={safeSourceUrl(note.review.authorUrl||'')||safeSourceUrl(note.review.url)||undefined} target="_blank" rel="noopener noreferrer">{note.review.author}</a>
+          {note.review.date&&<span> · {note.review.date}</span>}{note.review.visit&&<span> · {note.review.visit}</span>}
+        </footer>
+        <a href={safeSourceUrl(note.review.url)||undefined} target="_blank" rel="noopener noreferrer">{ro?'Fragment dintr-o recenzie relevantă Google':'Excerpt from a relevant Google review'}</a>
+      </blockquote>}
       <div className="place-actions">{group.actions.map((action,j)=>{
         const isCall=action.type==='call';
         const href=isCall?`tel:${action.phone}`:action.type==='website'?safeSourceUrl(action.url):null;
