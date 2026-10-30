@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import { NextStepsSchema, type NextAction, type NextSteps as Steps } from '@/lib/concierge/next-steps';
+import { VideoResults } from './video-results';
 import { Icon } from './ui/icons';
 
 export function NextSteps({groups,ro,disabled,onAction}:{groups?:Steps;ro:boolean;disabled:boolean;onAction:(action:NextAction,title:string)=>void}) {
@@ -11,7 +12,7 @@ export function NextSteps({groups,ro,disabled,onAction}:{groups?:Steps;ro:boolea
       <h3 className="text-sm font-medium">{group.title}</h3>
       <div className="next-step-buttons">{group.actions.map((action,i)=>{
         const href=action.type==='website'?action.url:action.type==='maps'?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(action.destination)}`:action.type==='call'?`tel:${action.phone}`:null;
-        return href ? <a key={i} className="next-step-button" href={href} target={action.type==='call'?undefined:'_blank'} rel="noopener noreferrer" title={action.type==='call'?action.phone:action.type==='maps'?action.destination:href}><Icon name={action.type==='maps'?'pin':'link'}/>{action.label}</a> : <button key={i} type="button" disabled={disabled} className="next-step-button" onClick={()=>onAction(action,group.title)}><Icon name={action.type==='followup'?'message':'chevron'}/>{action.label}</button>;
+        return href ? <a key={i} className="next-step-button" href={href} target={action.type==='call'?undefined:'_blank'} rel="noopener noreferrer" title={action.type==='call'?action.phone:action.type==='maps'?action.destination:href}><Icon name={action.type==='maps'?'pin':'link'}/>{action.label}</a> : <button key={i} type="button" disabled={disabled} className="next-step-button" onClick={()=>onAction(action,group.title)}><Icon name={action.type==='video'?'play':action.type==='followup'?'message':'chevron'}/>{action.label}</button>;
       })}</div>
       {group.actions.some(a=>a.type==='maps'||a.type==='call'||a.type==='website')&&<p className="text-[11px] text-muted">{ro?'Se deschide aplicația sau sursa externă. Verifică destinația și detaliile; nu facem rezervări.':'Opens an app or external source. Check destination and details; no booking is made.'}</p>}
     </div>)}
@@ -32,6 +33,7 @@ export function ActionPanel({action,title,ro,onClose,onStartTimer}:{action:NextA
   return <dialog ref={dialog} className="settings-panel" aria-labelledby="action-panel-title" onCancel={e=>{e.preventDefault();onClose();}}>
     <div className="settings-heading"><h2 id="action-panel-title" className="font-medium">{action.label}</h2><button type="button" className="icon-button" aria-label={ro?'Închide':'Close'} onClick={onClose}><Icon name="close"/></button></div>
     <p className="mb-4 text-sm text-muted">{title}</p>
+    {action.type==='video'&&<VideoResults query={action.query} ro={ro}/>}
     {action.type==='checklist'&&<><div className="space-y-3">{items.map((item,i)=><label key={i} className="flex items-center gap-3"><input type="checkbox" checked={item.done} onChange={()=>{setItems(old=>old.map((x,j)=>j===i?{...x,done:!x.done}:x));setCopied(false);}}/><input aria-label={`${ro?'Element':'Item'} ${i+1}`} value={item.text} maxLength={180} onChange={e=>{setItems(old=>old.map((x,j)=>j===i?{...x,text:e.target.value}:x));setCopied(false);}} className={`w-full min-w-0 rounded-lg border border-line p-2 text-sm ${item.done?'line-through text-muted':''}`}/></label>)}</div><p className="mt-4 text-xs text-muted">{ro?'Lista originală rămâne în Istoric. Modificările și bifările sunt temporare; copiază lista pentru a le păstra.':'The original list stays in History. Edits and checkmarks are temporary; copy the list to keep them.'}</p></>}
     {action.type==='copy'&&<><textarea aria-label={ro?'Text de copiat':'Text to copy'} value={draft} maxLength={4000} rows={12} onChange={e=>{setDraft(e.target.value);setCopied(false);}} className="w-full rounded-lg border border-line p-3 text-sm"/><p className="mt-2 text-xs text-muted">{ro?'Verifică și modifică textul. Nu trimitem mesaje în locul tău.':'Review and edit this draft. We do not send messages for you.'}</p></>}
     {(action.type==='copy'||action.type==='checklist')&&<button type="button" onClick={()=>void copy()} className="next-step-button mt-4">{copied?(ro?'Copiat':'Copied'):(ro?'Copiază':'Copy')}</button>}
