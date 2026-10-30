@@ -19,12 +19,29 @@ export function youtubeId(value:string):string|null {
     return id&&/^[\w-]{11}$/.test(id)?id:null;
   } catch {return null;}
 }
+// The provider sometimes formats a selected video as a plain Markdown link
+// instead of a citation. Accept that link only when its ID was returned by
+// the search tool, never merely because the model wrote a plausible URL.
+export function selectedVideoUrls(content:unknown[]):string[] {
+  const blocks=z.array(z.object({type:z.string(),text:z.string().optional(),citations:z.array(z.object({type:z.string(),url:z.string().optional()})).optional(),content:z.unknown().optional()})).parse(content);
+  const found=new Set<string>();
+  for(const block of blocks)if(block.type==='web_search_tool_result'&&Array.isArray(block.content)) {
+    for(const item of block.content){const parsed=z.object({type:z.literal('web_search_result'),url:z.string()}).safeParse(item);if(parsed.success){const id=youtubeId(parsed.data.url);if(id)found.add(id);}}
+  }
+  const urls:string[]=[];
+  for(const block of blocks)if(block.type==='text') {
+    for(const c of block.citations||[])if(c.type==='web_search_result_location'&&c.url&&youtubeId(c.url))urls.push(c.url);
+    for(const url of block.text?.match(/https:\/\/[^\s<>"\])]+/g)||[]){const id=youtubeId(url);if(id&&found.has(id))urls.push(url);}
+  }
+  return [...new Set(urls)];
+}
 const MetadataSchema=z.object({type:z.literal('video'),provider_name:z.literal('YouTube'),title:z.string().min(1).max(500),author_name:z.string().min(1).max(200),author_url:z.string().optional()});
 export async function verifyVideos(urls:string[],fetcher:typeof fetch=fetch):Promise<VideoResult[]> {
   const ids=[...new Set(urls.map(youtubeId).filter((id):id is string=>Boolean(id)))].slice(0,4);
   const results=await Promise.allSettled(ids.map(async id=>{
     const url=`https://www.youtube.com/watch?v=${id}`;
     const metadata=await fetcher(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`,{signal:AbortSignal.timeout(8000),redirect:'error',cache:'no-store'});
+    console.info('video metadata',JSON.stringify({status:metadata.status}));
     if(!metadata.ok)return null;
     const parsed=MetadataSchema.safeParse(await metadata.json());
     if(!parsed.success)return null;
