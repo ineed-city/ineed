@@ -52,3 +52,10 @@ test('video panel loads once on demand and creates a non-autoplay player only af
  find(tree,'button').props.onClick();tree=render();const frame=find(tree,'iframe');
  assert.equal(new URL(frame.props.src).hostname,'www.youtube-nocookie.com');assert.equal(new URL(frame.props.src).searchParams.get('autoplay'),'0');
 });
+
+test('plain model video links must also occur in actual search results',()=>{
+ const source={type:'web_search_tool_result',content:[{type:'web_search_result',url}]};
+ assert.equal(videos.selectedVideoUrls([source,{type:'text',text:`Watch [this video](${url}).`}])[0],url);
+ assert.equal(videos.selectedVideoUrls([{type:'text',text:`Invented [video](${url}).`}]).length,0);
+ assert.equal(videos.selectedVideoUrls([source,{type:'text',text:'https://www.youtube.com/watch?v=ZbCdEfGhI12'}]).length,0);
+});
