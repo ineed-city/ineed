@@ -21,7 +21,8 @@ const request = {question:'Find somewhere for tonight',city:'Bucharest, Romania'
 const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarification:null};
 function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
-  const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift();}}}};
+  const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift() || {stop_reason:'end_turn',content:[{type:'text',text:'No verified source.'}]};}}}};
+  api.beta.messages.stream=(args)=>{calls.push(args);let emit;return {on(_event,callback){emit=callback;return this;},async finalMessage(){const response=responses.shift();for(const block of response.content)if(block.type==='text')emit(block.text,block.text);return response;}};};
   const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
@@ -49,22 +50,22 @@ test('local results require search and cite their source',async()=>{
 test('local answer without evidence is withheld',async()=>{
   const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Made-up plumber'}]}]);
   const result=await s.answerNeed(request);
-  assert.equal(result.status,'error');assert.equal(result.segments.length,0);
+  assert.equal(result.status,'answered');assert.ok(!JSON.stringify(result).includes('Made-up plumber'));assert.equal(s.calls.length,2);
 });
 test('search tool error cannot produce unverified recommendations',async()=>{
   const s=service([{stop_reason:'end_turn',content:[{type:'web_search_tool_result',content:{error_code:'unavailable'}},{type:'text',text:'Try this business'}]}]);
-  assert.equal((await s.answerNeed(request)).status,'error');
+  assert.equal((await s.answerNeed(request)).status,'answered');
 });
 test('recipe answer avoids web tools',async()=>{
   const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Cook the rice.'}]}],{...plan,category:'recipe',needsWeb:false});
   assert.equal((await s.answerNeed(request)).status,'answered');assert.equal(s.calls[0].tools.some(t=>t.name==='web_search'),false);
 });
-test('paused search preserves provider blocks and stops after three rounds',async()=>{
+test('paused search preserves provider blocks and stops after four rounds',async()=>{
   const s=service([{stop_reason:'pause_turn',content:[searched]},{stop_reason:'end_turn',content:[cited]}]);
   assert.equal((await s.answerNeed(request)).status,'answered');assert.equal(s.calls.length,2);
   assert.equal(s.calls[1].messages[1].content[0],searched);
-  const stuck=service([{stop_reason:'pause_turn',content:[]},{stop_reason:'pause_turn',content:[]},{stop_reason:'pause_turn',content:[]}]);
-  await assert.rejects(stuck.answerNeed(request),/timed out/);assert.equal(stuck.calls.length,3);
+  const stuck=service(Array.from({length:4},()=>({stop_reason:'pause_turn',content:[]})));
+  await assert.rejects(stuck.answerNeed(request),/timed out/);assert.equal(stuck.calls.length,4);
 });
 test('truncated and refused answers are not presented as complete',async()=>{
   for(const stop_reason of ['max_tokens','refusal']) {
@@ -102,7 +103,7 @@ test('clear local requests skip planner but retain mandatory search evidence',as
   assert.equal((await s.answerNeed({...request,question:'I need a plumber'})).status,'answered');
   assert.equal(s.planning.length,0);assert.equal(s.calls.length,1);assert.equal(s.calls[0].tools[0].name,'web_search');
   const unverified=service([{stop_reason:'end_turn',content:[{type:'text',text:'An unverified plumber'}]}]);
-  assert.equal((await unverified.answerNeed({...request,question:'I need a plumber'})).status,'error');
+  assert.equal((await unverified.answerNeed({...request,question:'I need a plumber'})).status,'answered');
 });
 test('simple ingredient requests skip planner and web search',async()=>{
   for(const question of ['What can I cook with rice and chickpeas?','Ce pot găti cu orez și năut?']) {
@@ -286,7 +287,7 @@ function historyActions(authId, response={data:[],error:null}) {
   const calls=[];
   const query={select(...args){calls.push(['select',...args]);return this;},eq(...args){calls.push(['eq',...args]);return this;},order(){return this;},range(){return Promise.resolve(response);},single(){return Promise.resolve(response);}};
   const db={auth:{getClaims:async()=>({data:{claims:authId?{sub:authId}:null}})},from:()=>query,rpc:async(name,params)=>{calls.push(['rpc',name,params]);return response;}};
-  return {...load('app/history-actions.ts',{'@/lib/supabase/server':{createClient:async()=>db},'@/lib/concierge/history':historyRules,'@/lib/concierge/contracts':contracts,'./concierge-actions':{askConcierge:async()=>historyTurn.result}}),calls};
+  return {...load('lib/concierge/session.ts',{'server-only':{},'@/lib/supabase/server':{createClient:async()=>db},'@/lib/concierge/history':historyRules,'@/lib/concierge/contracts':contracts,'./service':{askConcierge:async()=>historyTurn.result}}),calls};
 }
 test('history read and write actions reject signed-out requests',async()=>{
   const h=historyActions(null);
@@ -345,7 +346,7 @@ test('personalization is separate data, with natural tone and no mandatory repea
 });
 test('answer action takes first name only from authenticated account metadata',async()=>{
   let name;let authenticated=true;
-  const {askConcierge}=load('app/concierge-actions.ts',{
+  const {askConcierge}=load('lib/concierge/service.ts',{'server-only':{},
     '@/lib/supabase/server':{createClient:async()=>({auth:{getUser:async()=>({data:{user:authenticated?{id:'user-one',user_metadata:{ineed_first_name:'Ana'}}:null},error:null})}})},
     '@/lib/concierge/answer':{answerNeed:async(input,firstName)=>{name=firstName;return {status:'answered',segments:[]};}},
     '@/lib/concierge/contracts':contracts,'@/lib/concierge/preferences':prefs,
@@ -477,7 +478,7 @@ test('model cannot turn arbitrary source citations into reviewed facts',async()=
   const reviewDate=new Date('2026-10-29T12:00:00Z');
   const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Fake listing',citations:[{type:'search_result_location',source:'https://fake.example',search_result_index:0,start_block_index:0,end_block_index:1,cited_text:'fake'}]}]}],plan,{reviewDate});
   const result=await s.answerNeed({...request,question:'Verifica farmacia din zona Blocuri Campia Turzii'});
-  assert.equal(result.status,'error');
+  assert.equal(result.status,'answered');assert.ok(!JSON.stringify(result).includes('Fake listing'));
 });
 
 
@@ -608,7 +609,7 @@ test('ordinary pharmacy lookup excludes explicitly agricultural pharmacy listing
  });
  test('map fallback still withholds an answer without sources',async()=>{
  const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Unsupported suggestion'}]}],plan,{mapResult:{status:'error',segments:[]}});
- assert.equal((await s.answerNeed(request)).status,'error');
+ assert.equal((await s.answerNeed(request)).status,'answered');
  });
 
 
@@ -730,3 +731,59 @@ test('unverified menu answer is replaced with honest next steps, never fabricate
  assert.equal(result.nextSteps[0].actions.length,2);
  assert.equal(result.nextSteps[0].actions[1].type,'copy');
 });
+
+test('category-only nearby requests skip planning without swallowing destination or menu constraints',()=>{
+ for(const question of ['O coafeză lângă mine','restaurant near me','a pharmacy nearby']) {
+  const p=contracts.quickPlan({...request,question});assert.equal(p.category,'local');assert.equal(p.destination.source,'profile');assert.ok(p.mapSearch);
+ }
+ for(const question of ['ramen restaurant near me','restaurant in Cluj','quiet restaurant near me']) assert.equal(contracts.quickPlan({...request,question}),null);
+ assert.equal(contracts.quickPlan({...request,question:'restaurant near me',city:''}),null);
+});
+test('missing sources trigger one recovery and use verified evidence from that recovery',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Invented restaurant'}]},{stop_reason:'end_turn',content:[searched,cited]}]);
+ const events=[]; const result=await s.answerNeed(request,'',e=>events.push(e));
+ assert.equal(s.calls.length,2);assert.ok(events.some(e=>e.stage==='recovering'));
+ assert.equal(result.segments.length,1);assert.equal(result.segments[0].text,cited.text);
+ assert.ok(!events.some(e=>e.type==='draft'));
+});
+test('agent can request a bounded research recovery before giving a sourced answer',async()=>{
+ const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'gap',name:'research_gap',input:{missing:'menu',strategy:'official menu'}}]},{stop_reason:'end_turn',content:[searched,cited]}],{...plan,requiresWebsiteCheck:true});
+ const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(s.calls.length,2);
+ assert.ok(s.calls[1].messages.some(m=>Array.isArray(m.content)&&m.content.some(b=>b.tool_use_id==='gap')));
+ assert.equal(s.calls[1].tools.some(t=>t.name==='research_gap'),false);
+});
+test('validated answer is delivered before history persistence finishes',async()=>{
+ const h=historyActions('owner',{data:1,error:null});let delivered=false;
+ const result=await h.askSavedConcierge(request,{id:historyId,version:0,turnId:historyTurn.id},undefined,answer=>{assert.equal(answer.status,'answered');assert.equal(h.calls.some(c=>c[0]==='rpc'),false);delivered=true;});
+ assert.equal(delivered,true);assert.equal(result.saved.ok,true);
+});
+test('stream endpoint rejects foreign origins before generation',async()=>{
+ let called=false;
+ const route=load('app/api/concierge/route.ts',{'@/lib/concierge/session':{askSavedConcierge:async()=>{called=true;}}},{Request,Response,ReadableStream,TextEncoder,Buffer});
+ const response=await route.POST(new Request('https://ineed.city/api/concierge',{method:'POST',headers:{origin:'https://evil.example','content-type':'application/json'},body:'{}'}));
+ assert.equal(response.status,403);assert.equal(called,false);
+});
+test('stream endpoint sends answer before saved completion and never caches it',async()=>{
+ const route=load('app/api/concierge/route.ts',{'@/lib/concierge/session':{askSavedConcierge:async(_r,_i,progress,onAnswer)=>{progress({type:'stage',stage:'maps'});onAnswer(historyTurn.result);return {answer:historyTurn.result,saved:{ok:true,version:1}};}}},{Request,Response,ReadableStream,TextEncoder,Buffer});
+ const response=await route.POST(new Request('https://ineed.city/api/concierge',{method:'POST',headers:{origin:'https://ineed.city','content-type':'application/json'},body:JSON.stringify({request,identity:{}})}));
+ assert.match(response.headers.get('cache-control'),/no-store/);
+ assert.deepEqual((await response.text()).trim().split('\n').map(l=>JSON.parse(l).type),['stage','answer','done']);
+});
+test('client handles split UTF-8 chunks and refuses incomplete streams without resending',async()=>{
+ const events=[{type:'draft',text:'Și orez'},{type:'done',response:{answer:historyTurn.result}}];
+ const bytes=new TextEncoder().encode(events.map(e=>JSON.stringify(e)+'\n').join(''));let calls=0;
+ const client=load('lib/concierge/stream-client.ts',{}, {TextDecoder,fetch:async()=>{calls++;return new Response(new ReadableStream({start(c){for(const byte of bytes)c.enqueue(new Uint8Array([byte]));c.close();}}));}});
+ const seen=[];assert.equal((await client.askStreamingConcierge({}, {}, e=>seen.push(e))).answer.status,'answered');
+ assert.equal(seen[0].text,'Și orez');assert.equal(calls,1);
+ const broken=load('lib/concierge/stream-client.ts',{}, {TextDecoder,fetch:async()=>new Response('{"type":"stage","stage":"maps"}\n')});
+ await assert.rejects(broken.askStreamingConcierge({}, {}, ()=>{}),/Incomplete/);
+});
+
+ test('stable final prose streams after tool preparation, with actions validated at completion',async()=>{
+ const groups=[{title:'Recipe',actions:[{type:'timer',label:'Cook',seconds:600},{type:'followup',label:'Variation',prompt:'Make a variation.'}]}];
+ const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Simmer rice for ten minutes.'}]}],{...plan,category:'recipe',needsWeb:false});
+ const events=[];const answer=await s.answerNeed({...request,question:'Ce pot găti cu orez și năut?'},'',e=>events.push(e));
+ assert.ok(events.some(e=>e.type==='draft'&&e.text==='Simmer rice for ten minutes.'));
+ assert.equal(answer.status,'answered');assert.equal(answer.nextSteps.length,1);
+ assert.equal(s.calls[0].tool_choice.name,'present_next_steps');
+ });

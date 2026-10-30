@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { HistoryDialog } from "./history-dialog";
 import { PlaceResults } from "./place-results";
 import { ChatTranscript } from "./chat-transcript";
-import { saveChatTurn, askSavedConcierge } from "./history-actions";
+import { saveChatTurn } from "./history-actions";
+import { askStreamingConcierge } from "@/lib/concierge/stream-client";
+import type { AnswerStage } from "@/lib/concierge/progress";
 import { chatContext, MAX_CHAT_TURNS, type SavedTurn, type SavedChat } from "@/lib/concierge/history";
 import { FeedbackDialog } from "./answer-feedback";
 import { NextSteps, ActionPanel, ActiveTimer } from "./next-steps";
@@ -51,6 +53,9 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     return ()=>window.removeEventListener('beforeunload',warn);
   },[unsaved,saving]);
   const [result, setResult] = useState<ConciergeResult | null>(null);
+  const [stage,setStage]=useState<AnswerStage>("planning");
+  const [draft,setDraft]=useState("");
+  const [delivered,setDelivered]=useState(false);
   const [pending, setPending] = useState(false);
   const requestInFlight = useRef(false);
   const scrollAction = useRef(false);
@@ -145,12 +150,16 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     const asked=text.trim();
     if (requestInFlight.current || pending || saving || unsaved || preparingPhoto || turns.length>=MAX_CHAT_TURNS || asked.length < 2) return;
     requestInFlight.current = true;
-    setElapsed(0); setPending(true);
+    setAnsweredQuestion(asked); setElapsed(0); setPending(true); setDraft(""); setDelivered(false); setStage("planning");
     try {
       const location = liveLocation.enabled ? await liveLocation.forSearch() : {area:city,deviceLocation:undefined};
       const requestCity = location.area;
       const id=chatId||crypto.randomUUID();
-      const response = await askSavedConcierge({ question: asked, city: requestCity, deviceLocation:location.deviceLocation, language, context, ...(!fromAction && shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(!fromAction && photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()});
+      const response = await askStreamingConcierge({ question: asked, city: requestCity, deviceLocation:location.deviceLocation, language, context, ...(!fromAction && shareOpen ? { shared: {text:sharedText.trim(), url:sharedUrl.trim()} } : {}), ...(!fromAction && photo ? { photo } : {}) }, {id,version:chatVersion,turnId:crypto.randomUUID()}, event=>{
+        if(event.type==='stage')setStage(event.stage);
+        if(event.type==='draft')setDraft(event.text);
+        if(event.type==='answer'){setResult(event.answer);setAnsweredQuestion(asked);setDelivered(true);setDraft("");}
+      });
       const {answer}=response;
       setResult(answer); setAnsweredQuestion(asked);
       if (response.turn && response.saved) {
@@ -184,11 +193,12 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     {cameraOpen && <CameraDialog ro={ro} onClose={() => setCameraOpen(false)} onCapture={file => {void attachPhoto(file);}} />}
 
     {!!turns.length && <div className="mb-4 flex items-center justify-between gap-3 text-xs"><span className="text-muted">{ro ? "Conversație" : "Conversation"} · {turns[0].question.slice(0,65)}</span><button type="button" disabled={pending||saving} onClick={startNew} className="text-brand underline">{ro ? "Conversație nouă" : "New chat"}</button></div>}
-    <ChatTranscript turns={result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={runAction}/>
+    <ChatTranscript turns={pending && (delivered || draft) || result?.status === "error" ? turns : turns.slice(0,-1)} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={runAction}/>
     {turns.some(turn=>turn.hadPhoto)&&!photo&&<p className="mb-4 text-xs text-muted">{ro ? "Pozele anterioare nu sunt salvate. Atașează din nou poza dacă întrebarea depinde de ea." : "Earlier photos are not saved. Reattach the photo if your follow-up depends on it."}</p>}
     <div ref={answerRegion} role="status" aria-live="polite" aria-busy={pending} className={pending || result ? "answer-region" : ""}>
-      {pending && <p className="answer-loading">{elapsed >= 10 ? (ro ? "Încă lucrez. Verificarea surselor web poate dura mai mult." : "Still working. Checking web sources can take longer.") : (ro ? "Pregătesc răspunsul…" : "Preparing your answer…")} <span aria-hidden="true">{elapsed}s</span></p>}
-      {!pending && result && <article className="answer-card">
+      {pending && <p className="answer-loading">{delivered ? (ro?'Salvez conversația…':'Saving conversation…') : ({planning:ro?'Înțeleg cererea…':'Understanding your request…',maps:ro?'Caut pe hartă…':'Checking the map…',research:ro?'Verific sursele…':'Checking sources…',recovering:ro?'Verific și alte surse…':'Checking other sources…',writing:ro?'Pregătesc răspunsul…':'Preparing your answer…'})[stage]} <span aria-hidden="true">{elapsed}s</span></p>}
+      {pending && draft && !delivered && <article className="answer-card"><p className="chat-question mb-4">{answeredQuestion}</p><div className="whitespace-pre-wrap">{draft.replace(/\*\*/g, "")}</div></article>}
+      {(!pending || delivered) && result && <article className="answer-card">
         <p className="chat-question mb-4 whitespace-pre-wrap break-words">{answeredQuestion}</p>
         <div className="answer-label"><ConciergeMark /><span>{ro ? "Pentru tine" : "For you"}</span></div>
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}

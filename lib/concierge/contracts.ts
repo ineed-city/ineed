@@ -78,9 +78,14 @@ export function quickPlan(input: ConciergeRequest): Plan | null {
   if (!process.env.GOOGLE_MAPS_API_KEY && input.city.trim() && !/\b(in|din|la|near|around|langa|zona)\b/.test(q) && /\b(plumber|handyman|restaurant|restaurants|cafe|cafes|electrician|instalator|restaurante|cafenea)\b/.test(q)) {
     return { goal: input.question, category: "local", needsWeb: true, clarification: null };
   }
+  // Exact category-only nearby requests need no AI interpretation. Any named
+  // destination, qualifier, photo or conversation still goes through the planner.
+  const nearby = q.match(/^(?:(?:find |i need |caut |am nevoie de |o |un |a |an ))?(pharmacy|farmacie|restaurant|restaurante|restaurants|cafe|cafenea|hairdresser|coafeza|coafor|barber|frizerie)(?: (?:near me|nearby|around me|langa mine|in apropiere))[?.!]?$/);
+  const types:Record<string,NonNullable<Plan['mapSearch']>['placeType']>={pharmacy:'pharmacy',farmacie:'pharmacy',restaurant:'restaurant',restaurante:'restaurant',restaurants:'restaurant',cafe:'cafe',cafenea:'cafe',hairdresser:'hair_salon',coafeza:'hair_salon',coafor:'hair_salon',barber:'barber_shop',frizerie:'barber_shop'};
+  if (nearby && input.city.trim()) return {goal:input.question,category:'local',needsWeb:true,requiresWebsiteCheck:false,clarification:null,destination:{city:input.city,source:'profile',clarificationReason:'none'},mapSearch:{query:nearby[1],placeType:types[nearby[1]],businessName:null,landmark:null,landmarkType:null}};
   // Restrict the no-search shortcut to ordinary ingredient-only requests.
   const recipe = q.match(/^(?:what can i cook with|ce pot gati cu) (.+?)[?.!]?$/);
-  if (recipe && /^(?:(?:rice|chickpeas|eggs|pasta|potatoes|tomatoes|onions|carrots|beans|lentils|spinach|cheese|orez|naut|oua|paste|cartofi|rosii|ceapa|morcovi|fasole|linte|spanac|branza|and|si|,|\s)+)$/.test(recipe[1])) {
+  if (recipe && /^(?:(?:chicken|rice|chickpeas|eggs|pasta|potatoes|tomatoes|onions|carrots|beans|lentils|spinach|cheese|pui|piept de pui|orez|naut|oua|paste|cartofi|rosii|ceapa|morcovi|fasole|linte|spanac|branza|and|si|,|\s)+)$/.test(recipe[1])) {
     return { goal: input.question, category: "recipe", needsWeb: false, clarification: null };
   }
   return null;
