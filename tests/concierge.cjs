@@ -420,7 +420,7 @@ test('recipe actions receive a complete final answer and survive saved history',
 });
 test('malformed action metadata never replaces a valid answer',async()=>{
   const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'Cook the rice.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{bad:true}]}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Cook the rice.'}]}],{...plan,category:'recipe',needsWeb:false});
-  const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.nextSteps.length,0);assert.equal(result.segments[0].text,'Cook the rice.');
+  const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.nextSteps.length,1);assert.equal(result.nextSteps[0].actions.length,2);assert.equal(result.nextSteps[0].actions[0].type,'followup');assert.equal(result.segments[0].text,'Cook the rice.');
 });
 test('a tool-only response gets one bounded continuation for the readable answer',async()=>{
   const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{title:'Practice',actions:[{type:'followup',label:'Practice interview',prompt:'Ask me a practice interview question.'}]}]}}]},{stop_reason:'end_turn',content:[{type:'text',text:'Prepare two examples of your work.'}]}],{...plan,category:'general',needsWeb:false});

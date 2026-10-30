@@ -176,11 +176,23 @@ Do not provide dangerous DIY instructions. For immediate danger, prioritize appr
       }
       if(needsWeb && !input.shared) {
         const ro=input.language==='ro';
+        if(plan.category!=='local') return {status:'answered',plan,segments:[{text:ro?'Nu am putut verifica informația cerută din sursele disponibile. Pot continua dacă precizăm detaliul esențial sau îți pot pregăti cererea pentru o verificare directă.':'I couldn’t verify the requested information from the available sources. We can narrow down the key detail or prepare the request for a direct check.',sources:[]}],nextSteps:[{title:ro?'Continuă':'Continue',actions:[{type:'followup',label:ro?'Clarifică cererea':'Narrow the request',prompt:ro?'Păstrează cererea mea și întreabă-mă un singur detaliu care ar ajuta să găsești o sursă relevantă.':'Keep my original request and ask for one detail that would help find a relevant source.'},{type:'copy',label:ro?'Copiază întrebarea':'Copy question',text:input.question}]}]};
         return {status:'answered',plan,segments:[{text:ro?`Nu am putut confirma din sursele disponibile o opțiune care să îndeplinească cererea în ${input.city || 'zona cerută'}. Asta nu înseamnă că nu există. Putem verifica direct la un local sau alege o zonă mai largă.`:`I couldn’t confirm a matching option from the available sources in ${input.city || 'the requested area'}. That does not mean none exists. We can ask a business directly or choose a wider area.`,sources:[]}],nextSteps:[{title:ro?'Continuă căutarea':'Continue the search',actions:[{type:'followup',label:ro?'Alege altă zonă':'Choose another area',prompt:ro?'Vreau să extind căutarea pentru aceeași nevoie. Întreabă-mă ce alt oraș sau zonă prefer.':'I want to widen the search for the same need. Ask which other city or area I prefer.'},{type:'copy',label:ro?'Mesaj pentru local':'Draft an inquiry',text:ro?`Bună ziua! Mă puteți ajuta cu această cerere: ${input.question}? Vă rog să confirmați disponibilitatea și prețul.`:`Hello! Can you help with this request: ${input.question}? Please confirm availability and price.`}]}]};
       }
       return { status: "error", segments: [], plan, message: input.shared ? (input.language === "ro" ? "Nu am putut verifica suficiente informații publice. Dacă linkul este privat, copiază textul sau adaugă o captură de ecran și cere un rezumat al recomandărilor." : "I couldn’t verify enough public information. If the link is private, paste the text or attach a screenshot and ask for a summary of its recommendations.") : (input.language === "ro" ? "Nu am găsit surse suficiente. Încearcă o zonă sau o cerere mai precisă." : "I couldn’t verify enough sources. Try a more specific area or request.") };
     }
-    return { status: "answered", segments, plan, searched, nextSteps: verifiedSteps(proposed, evidence), ...(mapUnavailable ? { message: input.language === "ro" ? "Harta nu este disponibilă acum; am verificat surse web." : "The map is unavailable right now; I checked web sources." } : searchFailed ? { message: input.language === "ro" ? "Căutarea a fost limitată; verifică detaliile la sursă." : "Search was limited; confirm details with the source." } : {}) };
+    const steps=verifiedSteps(proposed,evidence);
+    // A malformed or empty model proposal must not remove useful recipe
+    // continuations. These ask about the actual answer rather than inventing
+    // ingredient quantities or a timer duration.
+    if(!steps.length && plan.category==='recipe') {
+      const ro=input.language==='ro';
+      steps.push({title:ro?'Rețeta ta':'Your recipe',actions:[
+        {type:'followup',label:ro?'Lista de cumpărături':'Shopping list',prompt:ro?'Fă lista de cumpărături pentru prima rețetă din răspuns, cu cantități și numărul de porții.':'Create a shopping list for the first recipe in your answer, with quantities and servings.'},
+        {type:'followup',label:ro?'Adaptează rețeta':'Adapt the recipe',prompt:ro?'Vreau să adaptez prima rețetă. Întreabă-mă ce ingredient vreau să înlocuiesc sau ce preferință am.':'I want to adapt the first recipe. Ask which ingredient I want to replace or what preference I have.'},
+      ]});
+    }
+    return { status: "answered", segments, plan, searched, nextSteps: steps, ...(mapUnavailable ? { message: input.language === "ro" ? "Harta nu este disponibilă acum; am verificat surse web." : "The map is unavailable right now; I checked web sources." } : searchFailed ? { message: input.language === "ro" ? "Căutarea a fost limitată; verifică detaliile la sursă." : "Search was limited; confirm details with the source." } : {}) };
   }
   throw new Error("Search timed out");
 }
