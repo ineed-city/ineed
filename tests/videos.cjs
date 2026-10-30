@@ -49,6 +49,7 @@ test('video panel loads once on demand and creates a non-autoplay player only af
  assert.equal(find(render(),'iframe'),null);assert.equal(calls,0);
  effects[0]()();effects[0]();await new Promise(resolve=>setImmediate(resolve));
  let tree=render();assert.equal(calls,1);assert.equal(find(tree,'iframe'),null);
+ const thumbnail=find(tree,'img');assert.equal(thumbnail.props.src,`https://i.ytimg.com/vi/${id}/hqdefault.jpg`);assert.equal(thumbnail.props.referrerPolicy,'no-referrer');assert.match(find(tree,'button').props['aria-label'],/Rice tutorial/);
  find(tree,'button').props.onClick();tree=render();const frame=find(tree,'iframe');
  assert.equal(new URL(frame.props.src).hostname,'www.youtube-nocookie.com');assert.equal(new URL(frame.props.src).searchParams.get('autoplay'),'0');
 });
