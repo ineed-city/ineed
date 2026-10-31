@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Brand } from "../ui/brand";
 import { SignUpForm } from "./signup-form";
 
@@ -15,6 +16,11 @@ export default function SignUpPage() {
         </p>
       </div>
       <SignUpForm />
+      <p className="text-center text-xs text-muted">
+        Înainte de a crea contul, citește{" "}
+        <Link href="/privacy" className="underline">Confidențialitatea</Link> și{" "}
+        <Link href="/terms" className="underline">Termenii</Link>.
+      </p>
     </main>
   );
 }

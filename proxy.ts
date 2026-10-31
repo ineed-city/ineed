@@ -40,7 +40,9 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/inregistrare");
-  const isPublic = isAuthPage || pathname.startsWith("/auth/callback");
+  // Confidențialitatea și termenii trebuie citiți înainte de a crea un cont.
+  const isLegalPage = pathname === "/privacy" || pathname === "/terms";
+  const isPublic = isAuthPage || isLegalPage || pathname.startsWith("/auth/callback");
 
   // Cine nu e logat ajunge la /login; cine e logat nu mai vede login/înregistrare.
   if (!isLoggedIn && !isPublic) {
@@ -69,7 +71,7 @@ function redirectWithCookies(
 
 export const config = {
   matcher: [
-    // Toate rutele, în afară de fișierele statice și imagini.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Toate rutele, în afară de fișierele statice, imagini și manifestul PWA.
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
