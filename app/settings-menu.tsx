@@ -81,9 +81,7 @@ export function SettingsMenu({ liveLocation, firstName, language, city, email, i
       <button type="button" onClick={onHistory} className="flex w-full items-center justify-between py-3 text-sm">{ro ? "Istoric" : "History"}<Icon name="history" /></button>
       <button type="button" onClick={onNewChat} className="flex w-full items-center justify-between py-3 text-sm">{ro ? "Conversație nouă" : "New chat"}<Icon name="message" /></button>
       <button type="button" onClick={onAddContext} className="flex w-full items-center justify-between py-3 text-sm">{ro ? "Adaugă context · postare sau link" : "Add context · post or link"}<Icon name="link" /></button>
-      <Link href="/manuals">{ro ? 'Manuale și produse' : 'Manuals & products'} <Icon name="chevron" /></Link>
       {isAdmin && <Link href="/admin/feedback">{ro ? 'Feedback răspunsuri' : 'Answer feedback'} <Icon name="chevron" /></Link>}
-      {isAdmin && <Link href="/admin">{ro ? 'Administrare' : 'Administration'} <Icon name="chevron" /></Link>}
     </nav>
     <section className="settings-group">
       <label className="flex items-center justify-between text-sm">{ro ? 'Limbă' : 'Language'}<select aria-label={ro ? 'Limbă' : 'Language'} value={language} disabled={busy} onChange={e=>void save({language:e.target.value as 'en'|'ro'})} className="rounded-lg border border-line bg-white p-2"><option value="en">English</option><option value="ro">Română</option></select></label>

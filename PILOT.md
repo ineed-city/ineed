@@ -1,14 +1,14 @@
 # INeed concierge pilot
 
-The home page is the general concierge. Existing security-product support is at `/manuals`; `/admin` still manages its approved manuals. Existing invite-only authentication is retained.
+The home page is the general concierge. Existing invite-only authentication is retained.
 
 ## Runtime
 
-Uses existing Supabase variables and `ANTHROPIC_API_KEY` on the server. `CONCIERGE_MODEL` optionally overrides the existing manuals model. No database migration is required for the concierge. No secrets belong in Git.
+Uses existing Supabase variables and `ANTHROPIC_API_KEY` on the server. `CONCIERGE_MODEL` optionally overrides the default model. No database migration is required for the concierge. No secrets belong in Git.
 
 Clear first-turn local requests with a selected area and simple ingredient-only recipes skip the separate AI planning call. Other requests and follow-ups are interpreted into a task brief. Answers use Claude with web search when needed. Local/current recommendations require returned source citations. Search failure without citations returns an honest error instead of unverified recommendations. Search is limited to two uses per API round and two rounds; answer output is limited to 4,000 tokens per round with an 85-second overall abort signal and no automatic retries. The model prompt requests short answers; it is not a guarantee of factual correctness.
 
-Authentication is verified inside the server action. Input lengths are validated server-side. A best-effort per-instance guard allows 15 concierge requests per account per hour and one concurrent request. This is NOT a distributed quota or hard spending cap: serverless instances/restarts reset it. Keep the pilot small and configure provider spending controls before inviting a wider audience. Existing manuals actions have their existing limits.
+Authentication is verified inside the server action. Input lengths are validated server-side. A best-effort per-instance guard allows 15 concierge requests per account per hour and one concurrent request. This is NOT a distributed quota or hard spending cap: serverless instances/restarts reset it. Keep the pilot small and configure provider spending controls before inviting a wider audience.
 
 Request, selected city, and up to four prior turns go to Claude. Search may send derived queries to the provider's search service. Conversation state stays in browser memory; the app does not add a conversation database. Provider retention still applies. The feedback download is a local text file containing the request and response; the tester chooses whether to share it.
 
@@ -27,9 +27,8 @@ Use an existing invited account. Share the invitation code privately, never the 
 3. Ask for a quiet restaurant. Open each source and check name, area and relevance.
 4. Clear the city and ask for a nearby service. Expect a location clarification.
 5. Switch to Romanian and repeat. Ask a follow-up, then start a new request and verify old context is cleared.
-6. Open Manuals, select an existing product, and ask a normal operating question. Check the cited page.
-7. Test on a phone. Confirm the input, answer and source links remain usable.
-8. Download the response for feedback; add whether it solved the need and any incorrect facts. Do not include private personal information.
+6. Test on a phone. Confirm the input, answer and source links remain usable.
+7. Download the response for feedback; add whether it solved the need and any incorrect facts. Do not include private personal information.
 
 Pilot limitations: web search is not a complete local-business directory; no precise-distance ranking, confirmed availability, booking, payment or provider vetting. Source links are evidence to inspect, not endorsements. Keep the first trial to a few invited testers before expanding.
 
@@ -53,6 +52,6 @@ Take a photo opens an in-app getUserMedia video preview (no microphone), with Ca
 
 ## Account menu and preferences
 
-The home header now contains the brand and hamburger menu. Manuals, admin (role-gated), password, sign out, language, location and privacy live in the menu. The entire concierge shell switches between English and Romanian. Generated answers are cleared when preferences change; they are not automatically translated.
+The home header now contains the brand and hamburger menu. Answer feedback (role-gated), password, sign out, language, location and privacy live in the menu. The entire concierge shell switches between English and Romanian. Generated answers are cleared when preferences change; they are not automatically translated.
 
 Language and the selected area are stored in the signed-in user's Supabase user metadata (ineed_language, ineed_city, ineed_location_configured). These are preferences only; authorization still reads profiles.role. Authenticated server actions accept only validated language/area patches. No migration or service key is required. Choose once or continue without location; no recurring automatic location prompts. Remove saved location clears it from future requests without changing browser permissions, which the site cannot revoke. The menu explains how to revoke those through browser/device settings. Coordinates are never saved to the account.
