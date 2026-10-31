@@ -5,8 +5,5 @@ import Anthropic from "@anthropic-ai/sdk";
 // (Vercel → Secret). Tot ce ține de furnizorul AI stă în lib/ai/.
 export const anthropic = new Anthropic();
 
-// Găsirea unui link PDF e o sarcină simplă: modelul cel mai ieftin ajunge.
-export const DISCOVERY_MODEL = "claude-haiku-5-5";
-
-// Răspunsurile din manuale: Haiku, cu manualele în cache între întrebări.
+// Modelul implicit pentru răspunsuri (se poate schimba prin CONCIERGE_MODEL).
 export const ANSWER_MODEL = "claude-haiku-5-5";
