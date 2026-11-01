@@ -21,6 +21,7 @@ export async function answerNeed(input: ConciergeRequest, firstName = "", progre
     { type: "text", text: payload },
   ] };
   const started = Date.now();
+  const requestTime = new Date(started).toISOString();
   let plan = quickPlan(input);
   const fast = Boolean(plan);
   if (!plan) {
@@ -86,6 +87,8 @@ Context contains earlier user requests and responses from this conversation, whi
   let recovered = false;
   let searchUses = 0;
   const searchBudget = websiteCheck ? 6 : 4;
+  // Thinking signatures bind the system/tools prefix. Keep both unchanged
+  // across handoffs; enforce the total budget with tool_choice, not tool edits.
   for (let round = 0; round < 4; round++) {
     progress?.({type:'stage',stage:recovered&&!actionsPrepared?'recovering':needsWeb&&!actionsPrepared?'research':'writing'});
     const params = {
@@ -99,7 +102,7 @@ ${localSources.length ? LOCAL_CORRECTION_INSTRUCTIONS : ""}
 ${mapEmpty ? "The map search returned no matching listings in its bounded area. This is NOT evidence that no business offers the requested item. Continue with web search of official business sites and menus in the resolved city. Do not claim that web-only results are within the GPS radius or rank them by distance." : ""}
 ${websiteCheck ? "Research the exact requirement in real time. Search the requested dish/product/service AND resolved city, then official business websites and indexed menus to verify it. Do not drop ramen or another requested item and substitute generic restaurants. An Asian/Japanese label is not proof of ramen. Cite the source explicitly naming the dish/service next to each confirmed match. Reviews are leads, not proof of current menu availability. Only say a menu/page was checked when returned evidence actually contains it. Use subsequent searches for missing menu/address/contact evidence. When initial results miss the exact requirement, call research_gap once with the missing evidence and a different targeted search strategy. Search independent businesses together when possible. Do not repeat identical searches. If no exact match is confirmed, explain what could not be verified, then provide clearly labeled unconfirmed leads or ask to expand the area. Never silently change city, invent a match, claim exhaustive absence or guarantee stock. Prepare two useful next steps: source-backed menu/map/call links where supported, otherwise a drafted inquiry or follow-up to choose another area. Do not ask users to repeat the same request." : ""}
 ${mapUnavailable ? "The map provider is unavailable for this request. Use web search to find sourced options in the resolved city. Do not claim a map was checked, nearby ranking, distances or routes. If the user requested a landmark, verify sub-area evidence or clearly label city-wide alternatives. Do not ask to repeat the same request merely because the map failed." : ""}
-You are INeed, a concise personal concierge. Answer in ${input.language === "ro" ? "Romanian" : "English"}. Current UTC timestamp: ${new Date().toISOString()}. Resolve today/tonight in the requested destination's local timezone, not from stale search snippets.
+You are INeed, a concise personal concierge. Answer in ${input.language === "ro" ? "Romanian" : "English"}. Current UTC timestamp: ${requestTime}. Resolve today/tonight in the requested destination's local timezone, not from stale search snippets.
 Cinema/event requests: identify the actual venue in the requested city, then check its official programme for the exact requested local date. Give film title, showtime, format/language and age rating only when supported. An old weekday page or undated snippet is not today's schedule. Never substitute cafes or unrelated activities. If exact sessions cannot be verified, give the verified official programme/booking page for that venue, explain the date gap briefly, and offer Open programme / Tickets actions linked to verified URLs (not a promise that a seat is available). Recover with a targeted venue + date search before stopping.
 Weather/clothing requests: use an up-to-date local hourly forecast for the requested place and time. Never present national averages, seasonal guesses, stale news, or another city's temperature as local conditions. State the location, forecast time, temperature/feels-like, rain and wind when supported, then practical clothing advice. If the direct weather feed is unavailable, search dedicated local weather forecast pages, and provide the verified forecast link if values cannot be confirmed.
 Write like a thoughtful, helpful conversation: warm, direct and specific to this person. In Romanian use natural informal tu, not formal dumneavoastră. Avoid canned introductions, corporate phrasing, exaggerated enthusiasm and routine As an AI disclaimers. Do not pretend to be human or invent personal familiarity.
@@ -118,7 +121,7 @@ No booking, contact, payment or submission tools exist. Never claim an action wa
 Do not provide dangerous DIY instructions. For immediate danger, prioritize appropriate urgent help. For technical product questions requiring exact model instructions, cite official manufacturer documentation or say you could not verify the steps; never invent them.`,
       ...(actionsPrepared || (needsWeb && searchUses>=searchBudget) ? {tool_choice:{type:"none" as const}} : !needsWeb ? {tool_choice:{type:"tool" as const,name:"present_next_steps"}} : {tool_choice:{type:"auto" as const,disable_parallel_tool_use:true}}),
       tools: [
-        ...(needsWeb ? [{ type: "web_search_20250305" as const, name: "web_search" as const, max_uses: Math.max(1, Math.min(websiteCheck ? 4 : 2, searchBudget-searchUses)) }] : []),
+        ...(needsWeb ? [{ type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 2 }] : []),
         ...(needsWeb ? [{name:'research_gap',description:'When initial search evidence does not solve the exact request, request one recovery search before giving up. Never use for a safety refusal.',input_schema:{type:'object' as const,properties:{missing:{type:'string'},strategy:{type:'string'}},required:['missing','strategy']}}] : []),
         {name:'present_next_steps',description:'Present actionable buttons after the answer; does not execute actions.',input_schema:z.toJSONSchema(PresentationSchema) as {type:'object';properties:Record<string,unknown>}},
       ],
