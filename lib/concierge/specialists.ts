@@ -40,6 +40,6 @@ export function specialistQuickPlan(input:ConciergeRequest,now=new Date()):Plan|
 
 export function createSpecialistMetrics(now:()=>number=Date.now) {
   const start=now();
-  const data={version:'specialists-v1',specialist:'general' as SpecialistId,fastPlan:false,planningMs:0,directMs:0,direct:'none',modelCalls:0,searches:0,fetches:0,recoveries:0,inputTokens:0,outputTokens:0,cacheReadTokens:0,cacheWriteTokens:0};
+  const data={version:'specialists-v1',specialist:'general' as SpecialistId,fastPlan:false,singlePass:false,planningMs:0,directMs:0,direct:'none',modelCalls:0,searches:0,fetches:0,recoveries:0,inputTokens:0,outputTokens:0,cacheReadTokens:0,cacheWriteTokens:0};
   return {data,finish:(outcome:string,evidenceSources=0)=>({ ...data,outcome,evidenceSources,totalMs:now()-start })};
 }

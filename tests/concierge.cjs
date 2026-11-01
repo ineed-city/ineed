@@ -787,7 +787,7 @@ test('client handles split UTF-8 chunks and refuses incomplete streams without r
  const events=[];const answer=await s.answerNeed({...request,question:'Ce pot găti cu orez și năut?'},'',e=>events.push(e));
  assert.ok(events.some(e=>e.type==='draft'&&e.text==='Simmer rice for ten minutes.'));
  assert.equal(answer.status,'answered');assert.equal(answer.nextSteps.length,1);
- assert.equal(s.calls[0].tool_choice.name,'present_next_steps');
+ assert.equal(s.calls[0].tool_choice.type,'auto');
  });
 
 test('cinema and dish requests bypass a mistaken generic map plan and retain the explicit city',async()=>{
@@ -849,4 +849,33 @@ test('cinema follow-ups retain full planning and do not use first-turn shortcuts
  const s=service([{stop_reason:'end_turn',content:[searched,cited]}],{...plan,category:'research'});
  await s.answerNeed({...request,question:'What movies are showing today',context:['User: Cinema in London\nArea at the time: Orsova']});
  assert.equal(s.planning.length,1);assert.equal(s.calls.length,1);
+});
+
+
+test('complete cited answer and buttons return without a second model call',async()=>{
+ const groups=[{title:'Menu',actions:[{type:'website',label:'Open menu',url:'https://example.com/menu'}]}];
+ const s=service([{stop_reason:'tool_use',content:[searched,cited,{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups,answerComplete:true}}]}]);
+ const r=await s.answerNeed(request);assert.equal(s.calls.length,1);assert.equal(r.segments[0].text,cited.text);assert.equal(r.segments[0].sources[0].url,'https://example.com/menu');assert.equal(r.nextSteps[0].actions[0].url,'https://example.com/menu');
+});
+test('single-pass completion does not bypass citation checks or trust unsafe actions',async()=>{
+ const groups=[{title:'Fake',actions:[{type:'website',label:'Open fake',url:'https://invented.example.com/'}]}];
+ const unsupported=service([{stop_reason:'tool_use',content:[{type:'text',text:'Invented recommendation'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups,answerComplete:true}}]}]);
+ const rejected=await unsupported.answerNeed(request);assert.ok(!JSON.stringify(rejected).includes('Invented recommendation'));assert.equal(unsupported.calls.length,2);
+ const sourced=service([{stop_reason:'tool_use',content:[searched,cited,{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups,answerComplete:true}}]}]);
+ const r=await sourced.answerNeed(request);assert.equal(sourced.calls.length,1);assert.equal(r.nextSteps.length,0);
+});
+test('incomplete, malformed or textless completion declarations retain the rewrite handoff',async()=>{
+ for(const first of [
+  [{type:'text',text:'Starting recipe'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[],answerComplete:false}}],
+  [{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[],answerComplete:true}}],
+  [{type:'text',text:'Starting recipe'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups:[{bad:true}],answerComplete:true}}],
+ ]) {
+  const s=service([{stop_reason:'tool_use',content:first},{stop_reason:'end_turn',content:[{type:'text',text:'Complete recipe with quantities and steps.'}]}],{...plan,category:'recipe',needsWeb:false});
+  const r=await s.answerNeed(request);assert.equal(s.calls.length,2);assert.equal(r.segments[0].text,'Complete recipe with quantities and steps.');
+ }
+});
+test('complete recipe returns usable prose and actions in one call',async()=>{
+ const groups=[{title:'Rice',actions:[{type:'timer',label:'Simmer 10 minutes',seconds:600}]}];
+ const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'For 2 servings: simmer 150 g rice in 300 ml water for 10 minutes, then rest 5 minutes.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups,answerComplete:true}}]}],{...plan,category:'recipe',needsWeb:false});
+ const r=await s.answerNeed(request);assert.equal(s.calls.length,1);assert.equal(r.nextSteps[0].actions[0].seconds,600);assert.match(r.segments[0].text,/150 g/);
 });
