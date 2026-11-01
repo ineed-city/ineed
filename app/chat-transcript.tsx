@@ -14,6 +14,7 @@ export function ChatTranscript({turns,ro,disabled,onAction}:{turns:SavedTurn[];r
       <div className="answer-card mt-3">
         {turn.result.message&&<p className="mb-2 whitespace-pre-wrap">{turn.result.message}</p>}
         {turn.result.mapData ? <PlaceResults result={turn.result} ro={ro}/> : turn.result.segments.map((segment,index)=><span key={index} className="whitespace-pre-wrap break-words">{segment.text.replace(/\*\*/g,'')}{segment.sources.map((source,i)=><a key={i} href={safeSourceUrl(source.url)||undefined} target="_blank" rel="noopener noreferrer" className="source-link">{source.title}</a>)}</span>)}
+        {turn.result.weatherData&&<p className="mt-3 text-xs text-muted"><span translate="no">Google Maps</span> · {ro?'Date meteo actualizate la cerere':'Weather refreshed on request'}</p>}
         {!turn.result.mapData&&<NextSteps groups={turn.result.nextSteps} ro={ro} disabled={disabled} onAction={(action,title)=>onAction(action,title,turn.question)}/>}
       </div>
     </article>)}

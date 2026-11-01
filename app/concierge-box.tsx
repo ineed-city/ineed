@@ -182,7 +182,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
     </header>
     {menuOpen && <SettingsMenu liveLocation={liveLocation} firstName={firstName} language={language} city={city} email={email} isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onSave={updatePreferences} onHistory={()=>{setMenuOpen(false);setHistoryOpen(true);}} onNewChat={startNew} onAddContext={()=>{setMenuOpen(false);setShareOpen(true);input.current?.focus();}} />}
     {historyOpen && <HistoryDialog ro={ro} onClose={()=>setHistoryOpen(false)} onOpen={openConversation} onNew={startNew} />}
-    {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.mapData ? "Map lookup (listing content not retained)" : result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
+    {feedbackOpen && <FeedbackDialog onClose={()=>setFeedbackOpen(false)} language={language} report={result?.status === "answered" && result.answerId ? {answerId:result.answerId,question:answeredQuestion,answer:result.weatherData ? "Weather lookup (provider data not retained)" : result.mapData ? "Map lookup (listing content not retained)" : result.segments.map(s=>s.text).join("").slice(0,16000)} : null} />}
     <main className={`concierge-main ${result || pending ? "has-answer" : ""}`}>
       <div className="concierge-intro"><ConciergeMark />
       <p className="concierge-eyebrow">{ro ? "Ajutorul tău de zi cu zi" : "Your everyday helper"}</p>
@@ -203,6 +203,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <div className="answer-label"><ConciergeMark /><span>{ro ? "Pentru tine" : "For you"}</span></div>
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
         {result.mapData ? <PlaceResults result={result} ro={ro}/> : result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
+        {result.weatherData && <p className="mt-3 text-xs text-muted"><span translate="no">Google Maps</span> · {ro?'Date meteo actualizate la cerere':'Weather refreshed on request'}</p>}
         {result.mapData && <p className="mt-3 text-xs text-muted">{ro ? 'Rezultatele hărții sunt temporare; poți repeta căutarea din Istoric.' : 'Map listings are temporary; repeat the search from History to refresh them.'}</p>}
         {result.status === "answered" && result.searched && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly."}</p>}
         {result.status==='answered'&&!result.mapData&&<NextSteps groups={result.nextSteps} ro={ro} disabled={pending||saving||preparingPhoto||Boolean(unsaved)||turns.length>=MAX_CHAT_TURNS} onAction={(action,title)=>runAction(action,title,answeredQuestion)}/>}
