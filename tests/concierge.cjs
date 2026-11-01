@@ -750,7 +750,8 @@ test('agent can request a bounded research recovery before giving a sourced answ
  const s=service([{stop_reason:'tool_use',content:[{type:'tool_use',id:'gap',name:'research_gap',input:{missing:'menu',strategy:'official menu'}}]},{stop_reason:'end_turn',content:[searched,cited]}],{...plan,requiresWebsiteCheck:true});
  const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(s.calls.length,2);
  assert.ok(s.calls[1].messages.some(m=>Array.isArray(m.content)&&m.content.some(b=>b.tool_use_id==='gap')));
- assert.equal(s.calls[1].tools.some(t=>t.name==='research_gap'),false);
+ assert.equal(s.calls[1].tools.some(t=>t.name==='research_gap'),true); // Retain definitions referenced by tool history.
+ assert.equal(s.calls[0].tool_choice.disable_parallel_tool_use,true);
 });
 test('validated answer is delivered before history persistence finishes',async()=>{
  const h=historyActions('owner',{data:1,error:null});let delivered=false;

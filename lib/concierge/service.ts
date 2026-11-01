@@ -28,7 +28,10 @@ export async function askConcierge(raw: unknown, progress?: AnswerProgress): Pro
     try { return { ...await answerNeed(parsed.data, readPreferences(data.user?.user_metadata).firstName, progress), answerId: crypto.randomUUID() }; }
     finally { entry.busy = false; }
   } catch (error) {
-    console.error("concierge failed", error instanceof Error ? error.name : "UnknownError");
+    const detail=error as {status?:unknown;message?:unknown};
+    const message=typeof detail?.message==='string'?detail.message:'';
+    // Only categorical diagnostics; provider messages can contain user data.
+    console.error("concierge failed", JSON.stringify({name:error instanceof Error?error.name:'UnknownError',status:typeof detail?.status==='number'?detail.status:undefined,signals:['tool_use','tool_result','tool_choice','max_uses','cache','context','token','rate_limit','overloaded','timeout','thinking','signature'].filter(word=>message.toLowerCase().includes(word))}));
     return { status: "error", segments: [], message: ro ? "Nu am putut răspunde acum. Încearcă din nou; dacă persistă, anunță administratorul." : "I couldn’t finish that request. Try again; if it persists, let the pilot administrator know." };
   }
 }
