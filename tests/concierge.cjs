@@ -17,14 +17,15 @@ function load(file, mocks = {}, globals = {}) {
 const nextSteps = load('lib/concierge/next-steps.ts');
 const localCorrections = load('lib/concierge/local-corrections.ts');
 const contracts = load('lib/concierge/contracts.ts');
+const specialists = load('lib/concierge/specialists.ts');
 const request = {question:'Find somewhere for tonight',city:'Bucharest, Romania',language:'en',context:[]};
 const plan = {goal:'Find dinner options',category:'local',needsWeb:true,clarification:null};
 function service(responses, chosen = plan, globals = {}) {
-  const calls=[]; const planning=[];
+  const calls=[]; const planning=[]; const providers=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);if(globals.responseDelay)await new Promise(resolve=>setTimeout(resolve,globals.responseDelay));return responses.shift() || {stop_reason:'end_turn',content:[{type:'text',text:'No verified source.'}]};}}}};
   api.beta.messages.stream=(args)=>{calls.push(args);let emit;return {on(_event,callback){emit=callback;return this;},async finalMessage(){const response=responses.shift();for(const block of response.content)if(block.type==='text')emit(block.text,block.text);return response;}};};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './cinema':{cinemaAnswer:async()=>null}, './weather':{weatherAnswer:async()=>null}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
-  return {answerNeed,calls,planning};
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './specialists':specialists, './cinema':{cinemaAnswer:async()=>{providers.push('cinema');return globals.cinemaResult||null;}}, './weather':{weatherAnswer:async()=>{providers.push('weather');return globals.weatherResult||null;}}, './maps':{mapAnswer:async()=>{providers.push('maps');return globals.mapResult || null;}}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  return {answerNeed,calls,planning,providers};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
 const searched={type:'web_search_tool_result',content:[]};
@@ -796,7 +797,8 @@ test('cinema and dish requests bypass a mistaken generic map plan and retain the
   const result=await s.answerNeed({...request,question,city:'Orsova'});
   assert.equal(result.status,'answered');assert.ok(!JSON.stringify(result).includes('Unrelated cafe'));assert.equal(s.calls.length,1);
   assert.match(s.calls[0].messages[0].content.find(c=>c.type==='text').text,/"city":"Drobeta Turnu Severin"/);
-  assert.match(s.calls[0].system,/Never substitute cafes/);
+  if(question.startsWith('Ce filme'))assert.match(s.calls[0].system,/Never substitute cafes/);
+  else assert.match(s.calls[0].system,/local places specialist/);
  }
 });
 
@@ -826,4 +828,25 @@ test('an explicit page URL enables research even when the planner calls it stabl
  const s=service([{stop_reason:'end_turn',content:[searched,cited]}],{goal:'Summarize a film',category:'general',needsWeb:false,clarification:null});
  const r=await s.answerNeed({...request,question:'Read https://example.com/film and explain its plot.'});
  assert.equal(r.status,'answered');assert.equal(s.calls[0].tools.some(t=>t.name==='web_fetch'),true);assert.equal(s.calls[0].tools.some(t=>t.name==='web_search'),true);
+});
+
+
+test('specialists send simple cinema/weather requests directly without a planner or unrelated provider',async()=>{
+ for(const [question,key] of [['Ce filme pot vedea la cinema astăzi în Drobeta Turnu Severin?','cinema'],['Weather now','weather']]) {
+  const direct={status:'answered',segments:[{text:'Verified direct data',sources:[]}]};
+  const s=service([],plan,{[key+'Result']:direct});
+  assert.equal(await s.answerNeed({...request,question,city:'Orsova'}),direct);
+  assert.equal(s.planning.length,0);assert.equal(s.calls.length,0);assert.deepEqual(s.providers,[key]);
+ }
+});
+test('website specialist skips planning for an explicit first-turn read and never consults maps',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}]);
+ await s.answerNeed({...request,question:'Read https://example.com/menu and tell me its vegetarian options.'});
+ assert.equal(s.planning.length,0);assert.deepEqual(s.providers,[]);
+ assert.match(s.calls[0].system,/website research specialist/);assert.match(s.calls[0].system,/web_fetch first/);
+});
+test('cinema follow-ups retain full planning and do not use first-turn shortcuts',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}],{...plan,category:'research'});
+ await s.answerNeed({...request,question:'What movies are showing today',context:['User: Cinema in London\nArea at the time: Orsova']});
+ assert.equal(s.planning.length,1);assert.equal(s.calls.length,1);
 });
