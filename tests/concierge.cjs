@@ -23,7 +23,7 @@ function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);if(globals.responseDelay)await new Promise(resolve=>setTimeout(resolve,globals.responseDelay));return responses.shift() || {stop_reason:'end_turn',content:[{type:'text',text:'No verified source.'}]};}}}};
   api.beta.messages.stream=(args)=>{calls.push(args);let emit;return {on(_event,callback){emit=callback;return this;},async finalMessage(){const response=responses.shift();for(const block of response.content)if(block.type==='text')emit(block.text,block.text);return response;}};};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './weather':{weatherAnswer:async()=>null}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './cinema':{cinemaAnswer:async()=>null}, './weather':{weatherAnswer:async()=>null}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -807,4 +807,16 @@ test('research continuation preserves signed system and tool prefixes after sear
  await s.answerNeed(request);
  assert.equal(s.calls.length,2);assert.equal(s.calls[0].system,s.calls[1].system);assert.equal(JSON.stringify(s.calls[0].tools),JSON.stringify(s.calls[1].tools));
  assert.equal(s.calls[1].messages[1].content,content);
+});
+
+test('direct webpage citations survive a tool handoff and support actions',async()=>{
+ const fetched={type:'web_fetch_tool_result',content:{type:'web_fetch_result',url:'https://example.com/menu',content:{type:'document',title:'Official menu',source:{type:'text',data:'Ramen 45 lei'}}}};
+ const s=service([{stop_reason:'pause_turn',content:[fetched]},{stop_reason:'end_turn',content:[{type:'text',text:'Ramen costs 45 lei.',citations:[{type:'char_location',document_index:0,cited_text:'Ramen 45 lei'}]}]}]);
+ const result=await s.answerNeed(request);assert.equal(result.status,'answered');assert.equal(result.segments[0].sources[0].url,'https://example.com/menu');
+ assert.equal(s.calls[0].tools.find(t=>t.name==='web_fetch').citations.enabled,true);
+ assert.equal(JSON.stringify(s.calls[0].tools),JSON.stringify(s.calls[1].tools));
+});
+test('unknown fetched document indexes cannot create source links',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Unverified claim',citations:[{type:'char_location',document_index:99,cited_text:'Claim'}]}]}]);
+ assert.ok(!JSON.stringify(await s.answerNeed(request)).includes('Unverified claim'));
 });

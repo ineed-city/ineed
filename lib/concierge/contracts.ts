@@ -29,6 +29,7 @@ export const PlanSchema = z.object({
   category: z.enum(["local", "recipe", "howto", "research", "general"]),
   needsWeb: z.boolean(),
   requiresWebsiteCheck: z.boolean().optional(),
+  cinemaRequest: z.object({date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),filmTitle:z.string().max(200).nullable().optional()}).nullable().optional(),
   weatherRequest: z.object({hoursAhead:z.number().int().min(0).max(23),clothing:z.boolean()}).nullable().optional(),
   clarification: z.string().nullable(),
   mapSearch: z.object({
@@ -49,6 +50,7 @@ export type ConciergeRequest = z.infer<typeof RequestSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type Segment = { text: string; sources: { title: string; url: string }[] };
 export type ConciergeResult = {
+  cinema?: import("./cinema").CinemaProgramme;
   placeNotes?: Record<string, {description?:string;review?:{text:string;author:string;authorUrl?:string;avatar?:string;url:string;date?:string;visit?:string}} >;
   mapData?: boolean;
   weatherData?: boolean;
