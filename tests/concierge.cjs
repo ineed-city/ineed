@@ -24,7 +24,7 @@ function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[]; const providers=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);if(globals.responseDelay)await new Promise(resolve=>setTimeout(resolve,globals.responseDelay));return responses.shift() || {stop_reason:'end_turn',content:[{type:'text',text:'No verified source.'}]};}}}};
   api.beta.messages.stream=(args)=>{calls.push(args);let emit;return {on(_event,callback){emit=callback;return this;},async finalMessage(){const response=responses.shift();for(const block of response.content)if(block.type==='text')emit(block.text,block.text);return response;}};};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './specialists':specialists, './cinema':{cinemaAnswer:async()=>{providers.push('cinema');return globals.cinemaResult||null;}}, './weather':{weatherAnswer:async()=>{providers.push('weather');return globals.weatherResult||null;}}, './maps':{mapAnswer:async()=>{providers.push('maps');return globals.mapResult || null;}}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './specialists':specialists, './cinema':{cinemaAnswer:async()=>{providers.push('cinema');return globals.cinemaResult||null;}}, './weather':{weatherAnswer:async()=>{providers.push('weather');return globals.weatherResult||null;}}, './maps':{mapAnswer:async()=>{providers.push('maps');return globals.mapResult || null;}}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:globals.answerModel || 'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning,providers};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -878,4 +878,14 @@ test('complete recipe returns usable prose and actions in one call',async()=>{
  const groups=[{title:'Rice',actions:[{type:'timer',label:'Simmer 10 minutes',seconds:600}]}];
  const s=service([{stop_reason:'tool_use',content:[{type:'text',text:'For 2 servings: simmer 150 g rice in 300 ml water for 10 minutes, then rest 5 minutes.'},{type:'tool_use',id:'steps',name:'present_next_steps',input:{groups,answerComplete:true}}]}],{...plan,category:'recipe',needsWeb:false});
  const r=await s.answerNeed(request);assert.equal(s.calls.length,1);assert.equal(r.nextSteps[0].actions[0].seconds,600);assert.match(r.segments[0].text,/150 g/);
+});
+
+ test('only simple Haiku nearby lookups disable extended thinking, with evidence checks retained',async()=>{
+  for(const [question,model,disabled] of [['O coafeză lângă mine','claude-haiku-5-5',true],['O coafeză lângă mine','other-model',false],['Find ramen on restaurant menus','claude-haiku-5-5',false]]) {
+    const s=service([{stop_reason:'end_turn',content:[searched,cited]}],plan,{answerModel:model});
+    const result=await s.answerNeed({...request,question});
+    assert.equal(s.calls[0].thinking?.type,disabled?'disabled':undefined);
+    assert.equal(s.calls[0].output_config.effort,'low');
+    assert.equal(result.segments[0].sources.length,1);
+  }
 });
