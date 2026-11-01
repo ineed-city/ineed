@@ -23,7 +23,7 @@ function service(responses, chosen = plan, globals = {}) {
   const calls=[]; const planning=[];
   const api={beta:{messages:{parse:async args=>{planning.push(args);return {parsed_output:chosen};},create:async args=>{calls.push(args);return responses.shift() || {stop_reason:'end_turn',content:[{type:'text',text:'No verified source.'}]};}}}};
   api.beta.messages.stream=(args)=>{calls.push(args);let emit;return {on(_event,callback){emit=callback;return this;},async finalMessage(){const response=responses.shift();for(const block of response.content)if(block.type==='text')emit(block.text,block.text);return response;}};};
-  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
+  const {answerNeed}=load('lib/concierge/answer.ts', {'server-only':{}, './weather':{weatherAnswer:async()=>null}, './maps':{mapAnswer:async()=>globals.mapResult || null}, './contracts':contracts, './next-steps':nextSteps, './local-corrections':{...localCorrections,reviewedLocalSources:(...args)=>localCorrections.reviewedLocalSources(...args, globals.reviewDate || new Date()),reviewedLocalAnswer:(...args)=>localCorrections.reviewedLocalAnswer(...args, globals.reviewDate || new Date())}, '@/lib/ai/anthropic':{anthropic:api,ANSWER_MODEL:'test'}, '@anthropic-ai/sdk/helpers/beta/zod':{betaZodOutputFormat:()=>({})}});
   return {answerNeed,calls,planning};
 }
 const cited={type:'text',text:'An option from an official site.',citations:[{type:'web_search_result_location',url:'https://example.com/menu',title:'Menu'}]};
@@ -787,3 +787,14 @@ test('client handles split UTF-8 chunks and refuses incomplete streams without r
  assert.equal(answer.status,'answered');assert.equal(answer.nextSteps.length,1);
  assert.equal(s.calls[0].tool_choice.name,'present_next_steps');
  });
+
+test('cinema and dish requests bypass a mistaken generic map plan and retain the explicit city',async()=>{
+ for(const question of ['Ce filme pot vedea la cinema astăzi în Drobeta Turnu Severin?','Restaurant cu ramen bun in Drobeta Turnu Severin']) {
+  const chosen={...plan,mapSearch:{placeType:'cafe',query:'cafes'},requiresWebsiteCheck:false,destination:{city:'Drobeta Turnu Severin',source:'question',clarificationReason:'none'}};
+  const s=service([{stop_reason:'end_turn',content:[searched,cited]}],chosen,{mapResult:{status:'answered',segments:[{text:'Unrelated cafe',sources:[]}]}});
+  const result=await s.answerNeed({...request,question,city:'Orsova'});
+  assert.equal(result.status,'answered');assert.ok(!JSON.stringify(result).includes('Unrelated cafe'));assert.equal(s.calls.length,1);
+  assert.match(s.calls[0].messages[0].content.find(c=>c.type==='text').text,/"city":"Drobeta Turnu Severin"/);
+  assert.match(s.calls[0].system,/Never substitute cafes/);
+ }
+});

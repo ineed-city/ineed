@@ -29,12 +29,13 @@ export const PlanSchema = z.object({
   category: z.enum(["local", "recipe", "howto", "research", "general"]),
   needsWeb: z.boolean(),
   requiresWebsiteCheck: z.boolean().optional(),
+  weatherRequest: z.object({hoursAhead:z.number().int().min(0).max(23),clothing:z.boolean()}).nullable().optional(),
   clarification: z.string().nullable(),
   mapSearch: z.object({
     businessName: z.string().max(160).nullable().optional(),
     landmark: z.string().max(160).nullable(),
     landmarkType: z.enum(['park','train_station','shopping_mall','hospital']).nullable(),
-    placeType: z.enum(['pharmacy','restaurant','cafe','supermarket','hospital','gas_station','lodging','car_repair','bakery','dentist','veterinary_care','atm','hair_salon','hair_care','barber_shop','beauty_salon','nail_salon','plumber','electrician','locksmith','florist','laundry']),
+    placeType: z.enum(['pharmacy','restaurant','cafe','supermarket','hospital','gas_station','lodging','car_repair','bakery','dentist','veterinary_care','atm','hair_salon','hair_care','barber_shop','beauty_salon','nail_salon','movie_theater','plumber','electrician','locksmith','florist','laundry']),
     query: z.string().min(2).max(180),
   }).nullable().optional(),
   // Literal location text, not a model-invented address or normalized alias.
@@ -50,6 +51,7 @@ export type Segment = { text: string; sources: { title: string; url: string }[] 
 export type ConciergeResult = {
   placeNotes?: Record<string, {description?:string;review?:{text:string;author:string;authorUrl?:string;avatar?:string;url:string;date?:string;visit?:string}} >;
   mapData?: boolean;
+  weatherData?: boolean;
   mapEmpty?: boolean;
   nextSteps?: NextSteps;
   answerId?: string;
@@ -104,4 +106,28 @@ export function resolveDestination(input: ConciergeRequest, plan: Plan): Concier
   // Preserve genuine ambiguity and missing task details.
   if (destination.clarificationReason === 'confirm_city') plan.clarification = null;
   return { ...input, city: destination.city, deviceLocation: undefined };
+}
+
+// Guard high-confidence task requirements even if the probabilistic planner
+// picks an unrelated category. Follow-ups still use the resolved task brief.
+export function guardTask(input:ConciergeRequest, original:Plan):Plan {
+  const plan={...original};
+  const q=input.question.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if (/\b(cinema|cinematograf|cinematografe|showtimes|movie theater|movie theatre)\b/.test(q)) {
+    plan.category='research'; plan.needsWeb=true; plan.mapSearch=null; plan.weatherRequest=null;
+    plan.goal=input.question; plan.requiresWebsiteCheck=true;
+  }
+  if (plan.category==='local' && /\b(ramen|sushi|carbonara|vegan|vegana|gluten|halal|vegetarian|vegetariana)\b/.test(q)) {
+    plan.requiresWebsiteCheck=true; plan.needsWeb=true; plan.goal=input.question;
+  }
+  const clothing=/\b(imbrac|imbraca|imbracaminte|wear|dress)\b/.test(q) && /\b(ies|afara|ora|today|outside|out|hour|weather|vreme)\b/.test(q);
+  const currentWeather=/\b(vreme|vremea|meteo|weather|temperatura|grade afara)\b/.test(q) && !/\b(cuptor|oven|corp|corpului|body|febra|fever|istoric|history)\b/.test(q);
+  if (clothing || currentWeather) {
+    plan.category='research';plan.needsWeb=true;plan.mapSearch=null;
+    // Only infer a narrow current/one-hour request; preserve the planner's
+    // explicit relative-hour selection and let web research handle other dates.
+    if(!plan.weatherRequest && !/\b(maine|tomorrow|week|saptamana|yesterday|ieri|luni|marti|miercuri|joi|vineri|sambata|duminica|seara|tonight)\b|\d/.test(q))
+      plan.weatherRequest={hoursAhead:/\b(ora|hour)\b/.test(q)?1:0,clothing};
+  }
+  return plan;
 }
