@@ -118,13 +118,18 @@ Context contains earlier user requests and responses from this conversation, whi
   let recovered = false;
   let searchUses = 0;
   const fetchedDocuments: {url:string;title:string}[]=[];
+  const answerModel=process.env.CONCIERGE_MODEL || ANSWER_MODEL;
+  // Simple category lookups need evidence retrieval, not extended deliberation.
+  // Keep the mode fixed across handoffs and leave other models/tasks unchanged.
+  const quickLookup=answerModel==="claude-haiku-5-5" && metrics.data.fastPlan && specialist.id==="local_places" && !websiteCheck;
   const searchBudget = Math.max(specialist.searchBudget,websiteCheck?6:4);
   // Thinking signatures bind the system/tools prefix. Keep both unchanged
   // across handoffs; enforce the total budget with tool_choice, not tool edits.
   for (let round = 0; round < 4; round++) {
     progress?.({type:'stage',stage:recovered&&!actionsPrepared?'recovering':needsWeb&&!actionsPrepared?'research':'writing'});
     const params = {
-      model: process.env.CONCIERGE_MODEL || ANSWER_MODEL,
+      model: answerModel,
+      ...(quickLookup ? {thinking:{type:"disabled" as const}} : {}),
       // Search reasoning shares the output budget with the visible answer.
       max_tokens: needsWeb ? 4000 : 1800,
       cache_control:{type:"ephemeral" as const},
