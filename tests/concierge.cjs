@@ -820,3 +820,10 @@ test('unknown fetched document indexes cannot create source links',async()=>{
  const s=service([{stop_reason:'end_turn',content:[{type:'text',text:'Unverified claim',citations:[{type:'char_location',document_index:99,cited_text:'Claim'}]}]}]);
  assert.ok(!JSON.stringify(await s.answerNeed(request)).includes('Unverified claim'));
 });
+
+
+test('an explicit page URL enables research even when the planner calls it stable knowledge',async()=>{
+ const s=service([{stop_reason:'end_turn',content:[searched,cited]}],{goal:'Summarize a film',category:'general',needsWeb:false,clarification:null});
+ const r=await s.answerNeed({...request,question:'Read https://example.com/film and explain its plot.'});
+ assert.equal(r.status,'answered');assert.equal(s.calls[0].tools.some(t=>t.name==='web_fetch'),true);assert.equal(s.calls[0].tools.some(t=>t.name==='web_search'),true);
+});

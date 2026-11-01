@@ -115,6 +115,9 @@ export function resolveDestination(input: ConciergeRequest, plan: Plan): Concier
 export function guardTask(input:ConciergeRequest, original:Plan):Plan {
   const plan={...original};
   const q=input.question.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if (/https?:\/\//i.test(input.question) || input.shared?.url) {
+    plan.needsWeb=true; plan.requiresWebsiteCheck=true; plan.mapSearch=null; plan.cinemaRequest=null; plan.weatherRequest=null;
+  }
   if (/\b(cinema|cinematograf|cinematografe|showtimes|movie theater|movie theatre)\b/.test(q)) {
     plan.category='research'; plan.needsWeb=true; plan.mapSearch=null; plan.weatherRequest=null;
     plan.goal=input.question; plan.requiresWebsiteCheck=true;
