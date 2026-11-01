@@ -28,5 +28,5 @@ test('ambiguous, multi-part, other timezone, dated and contextual requests keep 
 test('metrics contain counters and timing only, not requests, coordinates, names or source content',()=>{
  let now=10;const metrics=createSpecialistMetrics(()=>now);metrics.data.specialist='local_places';metrics.data.modelCalls=1;now=110;
  const out=metrics.finish('answered',3);assert.equal(out.totalMs,100);assert.equal(out.evidenceSources,3);assert.equal(out.modelCalls,1);
- assert.deepEqual(Object.keys(out).sort(),['version','specialist','fastPlan','planningMs','directMs','direct','modelCalls','searches','fetches','recoveries','inputTokens','outputTokens','cacheReadTokens','cacheWriteTokens','outcome','evidenceSources','totalMs'].sort());
+ assert.deepEqual(Object.keys(out).sort(),['version','specialist','fastPlan','singlePass','planningMs','directMs','direct','modelCalls','searches','fetches','recoveries','inputTokens','outputTokens','cacheReadTokens','cacheWriteTokens','outcome','evidenceSources','totalMs'].sort());
 });

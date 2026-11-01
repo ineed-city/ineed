@@ -151,11 +151,11 @@ Separate business existence and location from product stock: lack of online inve
 Never invent businesses, reviews, prices, proximity, opening times, qualifications or availability. Do not call options best or vetted. Explain relevance using actual evidence. A business website is not proof of quality. Search listings do not establish availability; ask the user to confirm directly. Distinguish original suggestions from verified facts.
 No booking, contact, payment or submission tools exist. Never claim an action was taken. Do not ask for personal contact details. A follow-up street or landmark refines the same task: keep its explicitly requested destination from the conversation and resolved task brief. Do not switch back to the profile city. For a new nearby/here request, use the current city field; if empty, ask rather than treating an earlier destination as the current physical location. The resolved city is the search destination, not necessarily the user’s physical location. Never ask whether to search there merely because a previous profile city differs. Do not mention a differing profile city. Treat it as approximate; do not claim precise distances or closest ranking without verified geographic evidence.
 Do not provide dangerous DIY instructions. For immediate danger, prioritize appropriate urgent help. For technical product questions requiring exact model instructions, cite official manufacturer documentation or say you could not verify the steps; never invent them.`,
-      ...(actionsPrepared || (needsWeb && (searchUses>=searchBudget || metrics.data.fetches>=specialist.fetchBudget)) ? {tool_choice:{type:"none" as const}} : !needsWeb ? {tool_choice:{type:"tool" as const,name:"present_next_steps"}} : {tool_choice:{type:"auto" as const,disable_parallel_tool_use:true}}),
+      ...(actionsPrepared || (needsWeb && (searchUses>=searchBudget || metrics.data.fetches>=specialist.fetchBudget)) ? {tool_choice:{type:"none" as const}} : {tool_choice:{type:"auto" as const,disable_parallel_tool_use:true}}),
       tools: [
         ...(needsWeb ? [{ type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 2 }, {type:"web_fetch_20250910" as const,name:"web_fetch" as const,max_uses:specialist.fetchesPerRound,max_content_tokens:12000,citations:{enabled:true}}] : []),
         ...(needsWeb ? [{name:'research_gap',description:'When initial search evidence does not solve the exact request, request one recovery search before giving up. Never use for a safety refusal.',input_schema:{type:'object' as const,properties:{missing:{type:'string'},strategy:{type:'string'}},required:['missing','strategy']}}] : []),
-        {name:'present_next_steps',description:'Present actionable buttons after the answer; does not execute actions.',input_schema:z.toJSONSchema(PresentationSchema) as {type:'object';properties:Record<string,unknown>}},
+        {name:'present_next_steps',description:'After writing the complete answer, present its actionable buttons and set answerComplete=true. If prose is still missing, set false. Does not execute actions.',input_schema:z.toJSONSchema(PresentationSchema) as {type:'object';properties:Record<string,unknown>}},
       ],
       messages,
     };
@@ -180,6 +180,7 @@ Do not provide dangerous DIY instructions. For immediate danger, prioritize appr
         if(url)searched=true;
       }
     }
+    const currentSegmentStart=segments.length;
     for (const block of response.content) {
       if (block.type === "web_search_tool_result") {
         searched = true;
@@ -217,7 +218,19 @@ Do not provide dangerous DIY instructions. For immediate danger, prioritize appr
       messages.push({role:'user',content:response.content.flatMap(b=>b.type==='tool_use'?[{type:'tool_result' as const,tool_use_id:b.id,content:'Research recovery allowed once. Change search wording/source, check official websites or indexed menus. Keep the exact user requirement and destination. Do not silently expand the area. Gather evidence before preparing actions. Nothing has been executed.'}]:[])});
       continue;
     }
-    if (response.stop_reason === 'tool_use' && !actionsPrepared) {
+    const presentation=PresentationSchema.safeParse(proposed);
+    const currentSegments=segments.slice(currentSegmentStart);
+    const completeWithActions=response.stop_reason==='tool_use' && !gap && response.content.filter(b=>b.type==='tool_use').length===1
+      && presentation.success && presentation.data.answerComplete===true
+      && currentSegments.some(s=>s.text.trim())
+      && (!needsWeb || ((searched||reviewedCited) && currentSegments.some(s=>s.sources.length)));
+    if(completeWithActions) {
+      // The model explicitly completed this response; retain native citations
+      // and run the same action/evidence checks below without a rewrite call.
+      segments.splice(0,currentSegmentStart);
+      metrics.data.singlePass=true;
+    }
+    if (response.stop_reason === 'tool_use' && !actionsPrepared && !completeWithActions) {
       actionsPrepared = true;
       // Client-tool calls are an intermediate handoff, not a complete answer.
       // Discard pre-tool narration and request a complete final answer.
