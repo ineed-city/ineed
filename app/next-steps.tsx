@@ -4,16 +4,17 @@ import { NextStepsSchema, type NextAction, type NextSteps as Steps } from '@/lib
 import { VideoResults } from './video-results';
 import { Icon } from './ui/icons';
 
-export function NextSteps({groups,ro,disabled,onAction}:{groups?:Steps;ro:boolean;disabled:boolean;onAction:(action:NextAction,title:string)=>void}) {
+export function NextSteps({groups,ro,disabled,onAction,autoVideos=true}:{autoVideos?:boolean;groups?:Steps;ro:boolean;disabled:boolean;onAction:(action:NextAction,title:string)=>void}) {
   const parsed=NextStepsSchema.safeParse(groups);
   if(!parsed.success || !parsed.data.length) return null;
   return <section className="next-steps" aria-label={ro?'Pașii următori':'Next steps'}>
     {parsed.data.map((group,index)=><div key={index} className="next-step-group">
       <h3 className="text-sm font-medium">{group.title}</h3>
-      <div className="next-step-buttons">{group.actions.map((action,i)=>{
+      <div className="next-step-buttons">{group.actions.filter(action=>!autoVideos||action.type!=='video').map((action,i)=>{
         const href=action.type==='website'?action.url:action.type==='maps'?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(action.destination)}`:action.type==='call'?`tel:${action.phone}`:null;
         return href ? <a key={i} className="next-step-button" href={href} target={action.type==='call'?undefined:'_blank'} rel="noopener noreferrer" title={action.type==='call'?action.phone:action.type==='maps'?action.destination:href}><Icon name={action.type==='maps'?'pin':'link'}/>{action.label}</a> : <button key={i} type="button" disabled={disabled} className="next-step-button" onClick={()=>onAction(action,group.title)}><Icon name={action.type==='video'?'play':action.type==='followup'?'message':'chevron'}/>{action.label}</button>;
       })}</div>
+      {autoVideos&&group.actions.filter(a=>a.type==='video').map((a,i)=><VideoResults key={a.query+String(i)} query={a.query} ro={ro}/>)}
       {group.actions.some(a=>a.type==='maps'||a.type==='call'||a.type==='website')&&<p className="text-[11px] text-muted">{ro?'Se deschide aplicația sau sursa externă. Verifică destinația și detaliile; nu facem rezervări.':'Opens an app or external source. Check destination and details; no booking is made.'}</p>}
     </div>)}
   </section>;

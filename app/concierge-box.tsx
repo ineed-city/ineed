@@ -1,5 +1,6 @@
 "use client";
 
+import { CinemaResults } from './cinema-results';
 import { useEffect, useRef, useState } from "react";
 import { HistoryDialog } from "./history-dialog";
 import { PlaceResults } from "./place-results";
@@ -203,6 +204,7 @@ export function ConciergeBox({ initial, email, isAdmin }: { initial: { language:
         <div className="answer-label"><ConciergeMark /><span>{ro ? "Pentru tine" : "For you"}</span></div>
         {result.message && <p className={result.status === "error" ? "text-red-800" : "mb-3 font-medium"}>{result.message}</p>}
         {result.mapData ? <PlaceResults result={result} ro={ro}/> : result.segments.map((segment, index) => <span key={index} className="whitespace-pre-wrap">{segment.text.replace(/\*\*/g, "")}{segment.sources.map((source, i) => <a key={i} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title} className="source-link">{new URL(source.url).hostname.replace(/^www\./, "")}</a>)}</span>)}
+        {result.cinema&&<CinemaResults programme={result.cinema} ro={ro}/>}
         {result.weatherData && <p className="mt-3 text-xs text-muted"><span translate="no">Google Maps</span> · {ro?'Date meteo actualizate la cerere':'Weather refreshed on request'}</p>}
         {result.mapData && <p className="mt-3 text-xs text-muted">{ro ? 'Rezultatele hărții sunt temporare; poți repeta căutarea din Istoric.' : 'Map listings are temporary; repeat the search from History to refresh them.'}</p>}
         {result.status === "answered" && result.searched && <p className="mt-4 border-t border-line pt-3 text-xs text-muted">{ro ? "Surse web consultate pentru acest răspuns. Confirmă prețul și disponibilitatea direct." : "Web sources consulted for this answer. Confirm prices and availability directly."}</p>}

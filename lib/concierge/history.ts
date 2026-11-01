@@ -4,6 +4,7 @@ import { safeSourceUrl } from './contracts';
 
 export const MAX_CHAT_TURNS = 30;
 const SavedResultSchema = z.object({
+  cinema:z.object({venue:z.string().max(200),date:z.string().max(10),checkedAt:z.string().datetime(),url:z.string().url().regex(/^https:\/\/(www\.cinemacity\.ro|tickets\.cinemacity\.ro)\//),films:z.array(z.object({title:z.string().max(300),minutes:z.number(),details:z.string().max(500),poster:z.string().url().regex(/^https:\/\/www\.cinemacity\.ro\//).optional(),trailer:z.string().regex(/^[\w-]{11}$/).optional(),url:z.string().url().regex(/^https:\/\/(www\.cinemacity\.ro|tickets\.cinemacity\.ro)\//),times:z.array(z.object({time:z.string().max(5),url:z.string().url().regex(/^https:\/\/(www\.cinemacity\.ro|tickets\.cinemacity\.ro)\//).optional(),soldOut:z.boolean(),format:z.string().max(200)})).max(100)})).max(100)}).optional(),
   mapData:z.boolean().optional(),
   weatherData:z.boolean().optional(),
   nextSteps: NextStepsSchema.optional(),
@@ -39,7 +40,7 @@ export type ChatSummary = Pick<SavedChat,'id'|'title'|'updated_at'>;
 
 export function chatContext(turns:SavedTurn[]):string[] {
   return turns.slice(-MAX_CHAT_TURNS).map(turn=>{
-    const answer = turn.result.weatherData ? 'Weather results were shown but are not retained. Check fresh weather data.' : turn.result.mapData ? 'Map results were shown but are not retained. Search again for current details.' : turn.result.status==='clarify' ? turn.result.message || '' : turn.result.segments.map(s=>s.text).join('');
+    const answer = turn.result.weatherData ? 'Weather results were shown but are not retained. Check fresh weather data.' : turn.result.mapData ? 'Map results were shown but are not retained. Search again for current details.' : turn.result.status==='clarify' ? turn.result.message || '' : turn.result.segments.map(s=>s.text).join('') + (turn.result.cinema ? '\nSchedule snapshot '+turn.result.cinema.date+': '+turn.result.cinema.films.map(f=>f.title+' '+f.times.map(t=>t.time).join(', ')).join('; ') : '');
     return `User: ${turn.question}\nArea at the time: ${turn.city || 'not set'}\n${turn.hadPhoto ? 'A photo was attached then; it is not available in saved history. Ask to reattach it if visual details are needed.\n' : ''}Previous response (recheck current facts): ${answer}`.slice(0,4000);
   });
 }
