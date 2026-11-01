@@ -1,4 +1,5 @@
 import 'server-only';
+import { cinemaBookingUrl } from './cinema-booking';
 import { z } from 'zod';
 import type { ConciergeRequest, ConciergeResult, Plan } from './contracts';
 import { youtubeId } from './videos';
@@ -12,7 +13,7 @@ export function cinemaUrl(value:string):string|undefined {
 export type CinemaFilm={title:string;minutes:number;details:string;poster?:string;trailer?:string;url:string;times:{time:string;url?:string;soldOut:boolean;format:string}[]};
 export type CinemaProgramme={venue:string;date:string;checkedAt:string;url:string;films:CinemaFilm[]};
 const Film=z.object({id:z.string(),name:z.string(),length:z.number(),link:z.string(),posterLink:z.string().optional(),videoLink:z.string().optional(),attributeIds:z.array(z.string())});
-const Event=z.object({filmId:z.string(),cinemaId:z.string(),businessDay:z.string(),eventDateTime:z.string(),bookingLink:z.string().optional(),soldOut:z.boolean().optional(),attributeIds:z.array(z.string()),compositeBookingLink:z.object({blockOnlineSales:z.boolean().optional()}).optional()});
+const Event=z.object({filmId:z.string(),cinemaId:z.string(),businessDay:z.string(),eventDateTime:z.string(),bookingLink:z.string().optional(),bookingRouterLaunchLink:z.string().optional(),soldOut:z.boolean().optional(),attributeIds:z.array(z.string()),compositeBookingLink:z.object({blockOnlineSales:z.boolean().optional()}).optional()});
 const Feed=z.object({body:z.object({films:z.array(Film).max(100),events:z.array(Event).max(1000)})});
 const Site=z.object({externalCode:z.string().regex(/^\d+$/),uri:z.string().startsWith('/cinemas/'),name:z.string(),address:z.object({city:z.string()})});
 export function parseProgramme(raw:unknown,venue:{id:string;name:string;url:string},date:string,now=new Date()):CinemaProgramme {
@@ -20,7 +21,7 @@ export function parseProgramme(raw:unknown,venue:{id:string;name:string;url:stri
   const localNow=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Bucharest',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(now).replace(' ','T');
   const films=data.films.flatMap(f=>{
     const url=cinemaUrl(f.link);if(!url)return [];
-    const times=data.events.filter(e=>e.filmId===f.id&&e.cinemaId===venue.id&&e.businessDay===date&&e.eventDateTime.startsWith(date+'T')&&e.eventDateTime>=localNow&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(e.eventDateTime)).sort((a,b)=>a.eventDateTime.localeCompare(b.eventDateTime)).map(e=>({time:e.eventDateTime.slice(11,16),soldOut:e.soldOut===true,...(!e.soldOut&&!e.compositeBookingLink?.blockOnlineSales&&e.bookingLink?{url:cinemaUrl(e.bookingLink)}:{}),format:e.attributeIds.filter(a=>/^(2d|3d|imax|4dx|subbed|dubbed)$/.test(a)).join(' · ')}));
+    const times=data.events.filter(e=>e.filmId===f.id&&e.cinemaId===venue.id&&e.businessDay===date&&e.eventDateTime.startsWith(date+'T')&&e.eventDateTime>=localNow&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(e.eventDateTime)).sort((a,b)=>a.eventDateTime.localeCompare(b.eventDateTime)).map(e=>({time:e.eventDateTime.slice(11,16),soldOut:e.soldOut===true,...(!e.soldOut&&!e.compositeBookingLink?.blockOnlineSales?{url:cinemaBookingUrl(e.bookingRouterLaunchLink)||cinemaBookingUrl(e.bookingLink)}:{}),format:e.attributeIds.filter(a=>/^(2d|3d|imax|4dx|subbed|dubbed)$/.test(a)).join(' · ')}));
     if(!times.length)return [];
     const trailer=f.videoLink?youtubeId(f.videoLink):null;
     return [{title:f.name,minutes:f.length,details:f.attributeIds.filter(a=>!a.includes('lang')&&!['2d','3d','subbed','dubbed','original'].includes(a)).join(' · '),url,poster:f.posterLink?cinemaUrl(f.posterLink):undefined,...(trailer?{trailer}:{}),times}];

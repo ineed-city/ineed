@@ -1,8 +1,10 @@
 'use client';
 import { useState } from 'react';
+import { cinemaBookingUrl } from '@/lib/concierge/cinema-booking';
 import type { CinemaProgramme } from '@/lib/concierge/cinema';
 
-export function CinemaResults({programme,ro}:{programme:CinemaProgramme;ro:boolean}) {
+export function CinemaResults({programme:rawProgramme,ro}:{programme:CinemaProgramme;ro:boolean}) {
+  const programme={...rawProgramme,films:rawProgramme.films.map(f=>({...f,times:f.times.map(t=>({...t,url:t.soldOut?undefined:cinemaBookingUrl(t.url)}))}))};
   const [playing,setPlaying]=useState<string|null>(null);
   return <section className="my-5 space-y-5" aria-label={ro?'Filme și ore':'Films and showtimes'}>
     <p className="text-xs text-muted">{ro?'Verificat':'Checked'} {new Date(programme.checkedAt).toLocaleString(ro?'ro-RO':'en-GB',{timeZone:'Europe/Bucharest'})} · {ro?'Ora României. Disponibilitatea se confirmă la rezervare.':'Romanian time. Availability is confirmed when booking.'}</p>

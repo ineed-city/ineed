@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Test the actual adapter with substituted network. */
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
 const js=ts.transpileModule(fs.readFileSync('lib/concierge/cinema.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-const mod={exports:{}};vm.runInNewContext(js,{module:mod,exports:mod.exports,require:n=>n==='server-only'?{}:n==='./videos'?{youtubeId:u=>u==='https://www.youtube.com/watch?v=abcdefghijk'?'abcdefghijk':null}:require(n),URL,Date,Intl,AbortSignal,console});
+const booking={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/concierge/cinema-booking.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{module:booking,exports:booking.exports,URL});
+const mod={exports:{}};vm.runInNewContext(js,{module:mod,exports:mod.exports,require:n=>n==='server-only'?{}:n==='./cinema-booking'?booking.exports:n==='./videos'?{youtubeId:u=>u==='https://www.youtube.com/watch?v=abcdefghijk'?'abcdefghijk':null}:require(n),URL,Date,Intl,AbortSignal,console});
 const {parseProgramme,cinemaAnswer,cinemaUrl}=mod.exports;
 const now=new Date('2026-11-01T10:00:00Z'),venue={id:'1821',name:'Cinema City',url:'https://www.cinemacity.ro/cinemas/drobeta-turnu-severin/1821'};
 const film={id:'f1',name:'Example',length:100,link:'https://www.cinemacity.ro/films/example/f1',posterLink:'https://www.cinemacity.ro/poster.jpg',videoLink:'https://www.youtube.com/watch?v=abcdefghijk',attributeIds:['comedy','ap-12','2d']};
@@ -22,4 +23,13 @@ test('adapter resolves city from official catalog and uses bounded fixed-host re
  assert.equal(await cinemaAnswer({...input,city:'Other city'},plan,fetcher,now),null);
  assert.equal(await cinemaAnswer(input,{cinemaRequest:{date:'2027-01-01'}},fetcher,now),null);
  assert.equal(await cinemaAnswer(input,plan,async()=>({ok:false}),now),null);
+});
+
+test('new programmes use official booking router and old answers use working order page',()=>{
+ const router='https://www.cinemacity.ro/ro/booking-router/launch/1821/123?lang=ro';
+ const p=parseProgramme(feed([{...event,bookingRouterLaunchLink:router}]),venue,'2026-11-01',now);
+ assert.equal(p.films[0].times[0].url,router);
+ assert.equal(parseProgramme(feed([event]),venue,'2026-11-01',now).films[0].times[0].url,'https://tickets.cinemacity.ro/order/123');
+ assert.equal(booking.exports.cinemaBookingUrl('https://tickets.cinemacity.ro/api/order/123?lang=ro'),'https://tickets.cinemacity.ro/order/123?lang=ro');
+ for(const bad of ['https://evil.example/order/123','https://tickets.cinemacity.ro/api/other/123','https://user@tickets.cinemacity.ro/order/123','javascript:alert(1)'])assert.equal(booking.exports.cinemaBookingUrl(bad),undefined);
 });
